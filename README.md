@@ -197,7 +197,7 @@ The project follows conventions expected by experienced Linux developers:
 
 ---
 
-## 🍷p+ Relevance to Wine / Proton
+## Wine 🍷 / Proton 🧪
 
 Modern Windows titles increasingly rely on DirectStorage-style APIs for
 asset streaming and decompression. On Linux, these calls are currently
@@ -269,8 +269,9 @@ CMake ≥ 3.16
 ### Build steps
 
 ``` 
-git clone https://github.com/yourname/ds-runtime.git
+git clone https://github.com/infinityabundance/ds-runtime.git
 cd ds-runtime
+
 
 mkdir build
 cd build
@@ -286,16 +287,31 @@ Run the demo:
 
 ## 🔭 Repository layout
 ``` 
-ds-runtime/
-├── CMakeLists.txt
-├── include/
-│   └── ds_runtime.hpp
-├── src/
-│   └── ds_runtime.cpp
-├── examples/
-│   └── ds_demo_main.cpp
-├── README.md
-└── LICENSE
+
+├── CMakeLists.txt            # Top-level CMake build configuration
+│
+├── include/                  # Public C++ API headers
+│   └── ds_runtime.hpp        # Core DirectStorage-style runtime interface
+│
+├── src/                      # Runtime implementation
+│   └── ds_runtime.cpp        # Queue, backend, and CPU execution logic
+│
+├── examples/                 # Standalone example programs
+│   ├── ds_demo_main.cpp      # CPU-only demo exercising ds::Queue and requests
+│   │
+│   └── vk-copy-test/         # Experimental Vulkan groundwork
+│       ├── copy.comp         # Vulkan compute shader (GLSL)
+│       ├── copy.comp.spv     # Precompiled SPIR-V shader
+│       ├── demo_asset.bin    # Small test asset for GPU copy
+│       ├── vk_copy_test.cpp  # Vulkan copy demo (CPU → GPU → CPU)
+├── docs/                     # Design and architecture documentation
+│   └── design.md             # Backend evolution and architectural notes
+│
+├── assets/                   # Non-code assets used by documentation
+│   └── logo.png              # Project logo displayed in README
+│
+├── README.md                 # Project overview, build instructions, roadmap
+└── LICENSE                   # Apache-2.0 license
 ``` 
 ---
 
