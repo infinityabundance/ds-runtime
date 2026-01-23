@@ -281,7 +281,8 @@ cmake --build .
 Run the demo:
 
 ```bash 
-./examples/ds_demo
+# from inside build/examples/
+./ds_demo
 ``` 
 ---
 
