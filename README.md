@@ -188,6 +188,33 @@ The project follows conventions expected by experienced Linux developers:
 
 - If something happens, it should be obvious where and why.
 
+---
+
+## 🍷p+ Relevance to Wine / Proton
+
+Modern Windows titles increasingly rely on DirectStorage-style APIs for
+asset streaming and decompression. On Linux, these calls are currently
+handled via compatibility-layer shims or fall back to traditional I/O paths.
+
+This project explores what a **native Linux runtime** for DirectStorage-like
+workloads could look like, with an emphasis on:
+
+- Correct API semantics
+- Clean separation between queue orchestration and execution
+- Explicit backend design (CPU today, GPU later)
+- Compatibility with Wine / Proton architecture
+
+The current implementation focuses on a **CPU backend** that provides:
+- Asynchronous I/O semantics
+- Explicit completion tracking
+- A decompression stage hook (currently a demo transform)
+
+This is intended as a **foundational layer** that could back a future
+`dstorage.dll` implementation in Wine/Proton, with GPU acceleration added
+incrementally once semantics and integration points are validated.
+
+--- 
+
 ## 🎬 Demo
 
 The included demo program:
