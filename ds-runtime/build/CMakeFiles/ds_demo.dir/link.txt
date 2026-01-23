@@ -1,0 +1,1 @@
+/usr/bin/c++ -Wl,--dependency-file=CMakeFiles/ds_demo.dir/link.d CMakeFiles/ds_demo.dir/examples/ds_demo_main.cpp.o -o ds_demo  libds_runtime.a -lpthread
