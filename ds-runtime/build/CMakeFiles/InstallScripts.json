@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/one/vscode/ds-runtime/build/cmake_install.cmake"
+	],
+	"Parallel" : false
+}
