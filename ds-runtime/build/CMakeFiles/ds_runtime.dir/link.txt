@@ -1,2 +1,0 @@
-/usr/bin/ar qc libds_runtime.a CMakeFiles/ds_runtime.dir/src/ds_runtime.cpp.o
-/usr/bin/ranlib libds_runtime.a

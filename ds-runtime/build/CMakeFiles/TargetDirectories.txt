@@ -1,4 +1,0 @@
-/home/one/vscode/ds-runtime/build/CMakeFiles/ds_runtime.dir
-/home/one/vscode/ds-runtime/build/CMakeFiles/ds_demo.dir
-/home/one/vscode/ds-runtime/build/CMakeFiles/edit_cache.dir
-/home/one/vscode/ds-runtime/build/CMakeFiles/rebuild_cache.dir
