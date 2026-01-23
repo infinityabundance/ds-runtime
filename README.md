@@ -1,5 +1,5 @@
 # ds-runtime
-A clean, Linux-native DirectStorage-style runtime (CPU today, GPU tomorrow)
+Experimental Linux-native DirectStorage-style runtime (CPU today, GPU tomorrow) GPU/Vulkan backend, towards Wine/Proton integration. 
 
 
 ## 🔎 Overview
@@ -78,6 +78,8 @@ This is not:
 │   ds::Backend      │   ← execution (CPU / Vulkan / future)
 └────────────────────┘
 ```
+See [docs/design.md](docs/design.md) for details on backend evolution.
+
 ---
 
 ## 💡 Core concepts
