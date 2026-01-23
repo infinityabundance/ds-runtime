@@ -1,7 +1,11 @@
 # ds-runtime
 
 <p align="center">
+<<<<<<< HEAD
+  <img src="ds-runtime/assets/ds_runtime_logo.png" alt="ds-runtime logo" width="180">
+=======
   <img src="assets/ds_runtime_logo.png" alt="ds-runtime-logo" width="180">
+>>>>>>> origin/main
 </p>
 
 Experimental Linux-native DirectStorage-style runtime (CPU today, GPU tomorrow) GPU/Vulkan backend, towards Wine/Proton integration. 
