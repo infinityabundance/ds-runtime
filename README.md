@@ -268,7 +268,7 @@ CMake ≥ 3.16
 
 ### Build steps
 
-``` 
+```bash 
 git clone https://github.com/infinityabundance/ds-runtime.git
 cd ds-runtime
 
@@ -280,8 +280,8 @@ cmake --build .
 ``` 
 Run the demo:
 
-``` 
-./ds_demo
+```bash 
+./examples/ds_demo
 ``` 
 ---
 
