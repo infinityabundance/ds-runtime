@@ -66,6 +66,70 @@ This is not:
 
 ---
 
+## 🎯 Why this matters
+
+Modern games increasingly rely on DirectStorage-style I/O to stream large assets
+(textures, meshes, shaders) efficiently from disk to memory and GPU. On Windows,
+DirectStorage provides a standardized API that reduces CPU overhead, minimizes
+copying, and enables better asset streaming at scale.
+
+On Linux, no equivalent native API exists today.
+
+As a result, Proton/Wine-based games that depend on DirectStorage semantics must
+either:
+- Fall back to legacy, CPU-heavy I/O paths, or
+- Emulate Windows behavior in user space with limited visibility into Linux-native
+  async I/O, memory management, and GPU synchronization.
+
+This creates a structural gap.
+
+### The problem space
+
+Without a native Linux-side abstraction:
+- Asset streaming is fragmented across engines and ad-hoc thread pools
+- CPU cores are wasted on I/O and decompression work that could be pipelined or
+  offloaded
+- GPU upload paths are often bolted on after the fact rather than designed into
+  the I/O model
+- Proton/Wine must translate Windows semantics without a clear Linux analogue
+
+DirectStorage is not just “faster file I/O” — it is an architectural contract
+between the game, the OS, and the GPU.
+
+### What a native Linux approach enables
+
+A Linux-native DirectStorage-style runtime enables:
+- A **clear, explicit async I/O model** built on Linux primitives
+  (e.g. thread pools today, io_uring tomorrow)
+- **Batching and queue-based submission** that matches how modern engines
+  structure asset streaming
+- A **first-class path from disk → CPU → GPU**, rather than implicit or
+  engine-specific glue
+- Cleaner **integration points for Wine/Proton**, avoiding opaque shims or
+  duplicated logic
+- An evolution path toward **GPU-assisted decompression and copies** via Vulkan
+
+This is not about copying Windows APIs verbatim. It is about providing a native
+Linux abstraction that maps cleanly onto modern storage, memory, and GPU systems.
+
+### Why ds-runtime exists
+
+`ds-runtime` explores what such a runtime could look like on Linux:
+
+- A small, explicit request/queue model inspired by DirectStorage semantics
+- Pluggable backends (CPU today, Vulkan/GPU tomorrow)
+- A stable C ABI suitable for integration into Wine/Proton or engines
+- Clear ownership, lifetime, and synchronization rules
+- Documentation that treats integration as a first-class concern
+
+Even partial adoption of these ideas can reduce duplication, clarify I/O paths,
+and make asset streaming behavior more predictable on Linux.
+
+The long-term goal is not to replace engines or drivers, but to provide a shared,
+understandable foundation for high-performance game I/O on Linux.
+
+---
+
 ## 🧱 High-level architecture
 ```
 ┌─────────────┐
