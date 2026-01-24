@@ -117,14 +117,84 @@ public:
         init(config);
     }
 
+    // Destroy the backend and release only the resources we created.
     ~VulkanBackend() override {
         cleanup();
     }
 
     // Submit work asynchronously. The Request is copied into the worker
     // lambda to decouple lifetime from the caller.
+    // Submit work asynchronously. The Request is copied into the worker
+    // lambda to decouple lifetime from the caller.
     void submit(Request req, CompletionCallback on_complete) override {
         pool_.submit([this, req, on_complete]() mutable {
+            // Validate the request before performing any GPU operations.
+            if (req.fd < 0) {
+                report_error("vulkan",
+                             "submit",
+                             "Invalid file descriptor",
+                             EBADF,
+                             __FILE__,
+                             __LINE__,
+                             __func__);
+                req.status = RequestStatus::IoError;
+                req.errno_value = EBADF;
+                if (on_complete) {
+                    on_complete(req);
+                }
+                return;
+            }
+
+            if (req.size == 0) {
+                report_error("vulkan",
+                             "submit",
+                             "Zero-length request is not allowed",
+                             EINVAL,
+                             __FILE__,
+                             __LINE__,
+                             __func__);
+                req.status = RequestStatus::IoError;
+                req.errno_value = EINVAL;
+                if (on_complete) {
+                    on_complete(req);
+                }
+                return;
+            }
+
+            if (req.op == RequestOp::Read && req.dst_memory == RequestMemory::Host &&
+                req.dst == nullptr) {
+                report_error("vulkan",
+                             "submit",
+                             "Read request missing destination buffer",
+                             EINVAL,
+                             __FILE__,
+                             __LINE__,
+                             __func__);
+                req.status = RequestStatus::IoError;
+                req.errno_value = EINVAL;
+                if (on_complete) {
+                    on_complete(req);
+                }
+                return;
+            }
+
+            if (req.op == RequestOp::Write && req.src_memory == RequestMemory::Host &&
+                req.src == nullptr) {
+                report_error("vulkan",
+                             "submit",
+                             "Write request missing source buffer",
+                             EINVAL,
+                             __FILE__,
+                             __LINE__,
+                             __func__);
+                req.status = RequestStatus::IoError;
+                req.errno_value = EINVAL;
+                if (on_complete) {
+                    on_complete(req);
+                }
+                return;
+            }
+
             handle_request(req);
             if (on_complete) {
                 on_complete(req);
@@ -293,6 +363,7 @@ private:
     }
 
     // Host-only I/O fallback path (no GPU buffers involved).
+    // Host-only I/O fallback path (no GPU buffers involved).
     void handle_host_io(Request& req) {
         ssize_t io_bytes = 0;
         if (req.op == RequestOp::Write) {
@@ -312,6 +383,13 @@ private:
         }
 
         if (io_bytes < 0) {
+            report_error("vulkan",
+                         req.op == RequestOp::Write ? "pwrite" : "pread",
+                         "Host I/O failed",
+                         errno,
+                         __FILE__,
+                         __LINE__,
+                         __func__);
             req.status = RequestStatus::IoError;
             req.errno_value = errno;
         } else {
@@ -354,7 +432,19 @@ private:
 
         // Stage file contents in a host-visible buffer.
         void* mapped = nullptr;
-        vkMapMemory(device_, staging_memory, 0, req.size, 0, &mapped);
+        if (vkMapMemory(device_, staging_memory, 0, req.size, 0, &mapped) != VK_SUCCESS) {
+            report_error("vulkan",
+                         "vkMapMemory",
+                         "Failed to map staging buffer memory",
+                         EIO,
+                         __FILE__,
+                         __LINE__,
+                         __func__);
+            destroy_buffer(staging_buffer, staging_memory);
+            req.status = RequestStatus::IoError;
+            req.errno_value = EIO;
+            return;
+        }
         const ssize_t rd = ::pread(
             req.fd,
             mapped,
@@ -446,7 +536,19 @@ private:
 
         // Write staged contents to disk.
         void* mapped = nullptr;
-        vkMapMemory(device_, staging_memory, 0, req.size, 0, &mapped);
+        if (vkMapMemory(device_, staging_memory, 0, req.size, 0, &mapped) != VK_SUCCESS) {
+            report_error("vulkan",
+                         "vkMapMemory",
+                         "Failed to map staging buffer memory",
+                         EIO,
+                         __FILE__,
+                         __LINE__,
+                         __func__);
+            destroy_buffer(staging_buffer, staging_memory);
+            req.status = RequestStatus::IoError;
+            req.errno_value = EIO;
+            return;
+        }
         const ssize_t wr = ::pwrite(
             req.fd,
             mapped,
@@ -593,7 +695,17 @@ private:
         begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-        vkBeginCommandBuffer(cmd, &begin_info);
+        if (vkBeginCommandBuffer(cmd, &begin_info) != VK_SUCCESS) {
+            report_error("vulkan",
+                         "vkBeginCommandBuffer",
+                         "Failed to begin command buffer",
+                         EIO,
+                         __FILE__,
+                         __LINE__,
+                         __func__);
+            vkFreeCommandBuffers(device_, command_pool_, 1, &cmd);
+            return false;
+        }
 
         VkBufferCopy region{};
         region.srcOffset = src_offset;
@@ -601,7 +713,17 @@ private:
         region.size = size;
         vkCmdCopyBuffer(cmd, src, dst, 1, &region);
 
-        vkEndCommandBuffer(cmd);
+        if (vkEndCommandBuffer(cmd) != VK_SUCCESS) {
+            report_error("vulkan",
+                         "vkEndCommandBuffer",
+                         "Failed to end command buffer",
+                         EIO,
+                         __FILE__,
+                         __LINE__,
+                         __func__);
+            vkFreeCommandBuffers(device_, command_pool_, 1, &cmd);
+            return false;
+        }
 
         // Fence ensures the copy completes before we read/write staging memory.
         VkFenceCreateInfo fence_info{};
@@ -637,7 +759,15 @@ private:
             return false;
         }
 
-        vkWaitForFences(device_, 1, &fence, VK_TRUE, UINT64_C(1'000'000'000));
+        if (vkWaitForFences(device_, 1, &fence, VK_TRUE, UINT64_C(1'000'000'000)) != VK_SUCCESS) {
+            report_error("vulkan",
+                         "vkWaitForFences",
+                         "Fence wait failed",
+                         EIO,
+                         __FILE__,
+                         __LINE__,
+                         __func__);
+        }
 
         vkDestroyFence(device_, fence, nullptr);
         vkFreeCommandBuffers(device_, command_pool_, 1, &cmd);

@@ -178,6 +178,71 @@ public:
     void submit(Request req, CompletionCallback on_complete) override {
         // Copy req by value into the job; the user-owned Request is distinct.
         pool_.submit([req, on_complete]() mutable {
+            // Validate the request before attempting any I/O.
+            if (req.fd < 0) {
+                report_error("cpu",
+                             "submit",
+                             "Invalid file descriptor",
+                             EBADF,
+                             __FILE__,
+                             __LINE__,
+                             __func__);
+                req.status = RequestStatus::IoError;
+                req.errno_value = EBADF;
+                if (on_complete) {
+                    on_complete(req);
+                }
+                return;
+            }
+
+            if (req.size == 0) {
+                report_error("cpu",
+                             "submit",
+                             "Zero-length request is not allowed",
+                             EINVAL,
+                             __FILE__,
+                             __LINE__,
+                             __func__);
+                req.status = RequestStatus::IoError;
+                req.errno_value = EINVAL;
+                if (on_complete) {
+                    on_complete(req);
+                }
+                return;
+            }
+
+            if (req.op == RequestOp::Read && req.dst == nullptr) {
+                report_error("cpu",
+                             "submit",
+                             "Read request missing destination buffer",
+                             EINVAL,
+                             __FILE__,
+                             __LINE__,
+                             __func__);
+                req.status = RequestStatus::IoError;
+                req.errno_value = EINVAL;
+                if (on_complete) {
+                    on_complete(req);
+                }
+                return;
+            }
+
+            if (req.op == RequestOp::Write && req.src == nullptr) {
+                report_error("cpu",
+                             "submit",
+                             "Write request missing source buffer",
+                             EINVAL,
+                             __FILE__,
+                             __LINE__,
+                             __func__);
+                req.status = RequestStatus::IoError;
+                req.errno_value = EINVAL;
+                if (on_complete) {
+                    on_complete(req);
+                }
+                return;
+            }
+
             if ((req.op == RequestOp::Read && req.dst_memory == RequestMemory::Gpu) ||
                 (req.op == RequestOp::Write && req.src_memory == RequestMemory::Gpu)) {
                 report_error("cpu",
