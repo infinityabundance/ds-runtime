@@ -233,7 +233,8 @@ This is intended as a **foundational layer** that could back a future
 incrementally once semantics and integration points are validated.
 
 For integration guidance (including a no-shim option), see
-[docs/wine_proton.md](docs/wine_proton.md).
+[docs/wine_proton.md](docs/wine_proton.md). For Arch Linux–specific Vulkan
+notes, see [docs/archlinux_vulkan_integration.md](docs/archlinux_vulkan_integration.md).
 
 --- 
 

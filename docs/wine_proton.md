@@ -61,6 +61,9 @@ This keeps the data path entirely inside the Wine/Proton process and avoids
 any PE/ELF bridging. The Vulkan backend in this repo is designed to accept
 externally-owned Vulkan objects without taking ownership.
 
+For Arch Linux packaging and Vulkan runtime notes, see
+[docs/archlinux_vulkan_integration.md](docs/archlinux_vulkan_integration.md).
+
 ### 4. Extend the mapping
 
 The current runtime offers:
