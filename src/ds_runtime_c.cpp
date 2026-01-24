@@ -18,6 +18,7 @@
 
 namespace {
 
+// Map C enum to C++ enum for compression modes.
 ds::Compression to_cpp_compression(ds_compression compression) {
     switch (compression) {
         case DS_COMPRESSION_FAKE_UPPERCASE:
@@ -28,6 +29,7 @@ ds::Compression to_cpp_compression(ds_compression compression) {
     }
 }
 
+// Map C enum to C++ enum for read/write operations.
 ds::RequestOp to_cpp_op(ds_request_op op) {
     switch (op) {
         case DS_REQUEST_OP_WRITE:
@@ -38,6 +40,7 @@ ds::RequestOp to_cpp_op(ds_request_op op) {
     }
 }
 
+// Map C enum to C++ enum for memory location (host/GPU).
 ds::RequestMemory to_cpp_memory(ds_request_memory memory) {
     switch (memory) {
         case DS_REQUEST_MEMORY_GPU:
@@ -48,6 +51,7 @@ ds::RequestMemory to_cpp_memory(ds_request_memory memory) {
     }
 }
 
+// Map C++ request status back to C enum for ABI consumers.
 ds_request_status to_c_status(ds::RequestStatus status) {
     switch (status) {
         case ds::RequestStatus::Ok:
@@ -60,6 +64,8 @@ ds_request_status to_c_status(ds::RequestStatus status) {
     }
 }
 
+// Translate a C request struct into the C++ Request type.
+// This keeps the C ABI stable while allowing internal evolution.
 ds::Request to_cpp_request(const ds_request& request) {
     ds::Request cpp{};
     cpp.fd = request.fd;
@@ -78,16 +84,21 @@ ds::Request to_cpp_request(const ds_request& request) {
     return cpp;
 }
 
+// Update the C request struct with completion status/error.
 void update_c_request(ds_request& c_req, const ds::Request& cpp_req) {
     c_req.status = to_c_status(cpp_req.status);
     c_req.errno_value = cpp_req.errno_value;
 }
 
+// Track a C request alongside its C++ equivalent so we can
+// update the C struct on completion.
 struct PendingRequest {
     ds::Request cpp_request;
     ds_request* c_request = nullptr;
 };
 
+// C ABI queue wrapper. Owns a C++ backend and manages
+// pending submission and in-flight tracking.
 class CQueue {
 public:
     explicit CQueue(std::shared_ptr<ds::Backend> backend)
@@ -95,6 +106,7 @@ public:
         , in_flight_(0)
     {}
 
+    // Enqueue a request. Ownership of the C struct remains with the caller.
     void enqueue(ds_request* request) {
         if (!request) {
             return;
@@ -106,6 +118,8 @@ public:
         pending_.push_back(std::move(pending));
     }
 
+    // Submit all enqueued requests to the backend.
+    // The callback is invoked once per request completion.
     void submit_all(ds_completion_callback callback, void* user_data) {
         std::vector<PendingRequest> to_submit;
         {
@@ -139,6 +153,7 @@ public:
         }
     }
 
+    // Block until all in-flight requests have completed.
     void wait_all() {
         std::unique_lock<std::mutex> lock(wait_mtx_);
         wait_cv_.wait(lock, [this] {
@@ -146,6 +161,7 @@ public:
         });
     }
 
+    // Return a snapshot of the in-flight request count.
     size_t in_flight() const {
         return in_flight_.load(std::memory_order_acquire);
     }

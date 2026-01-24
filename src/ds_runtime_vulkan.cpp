@@ -20,6 +20,9 @@ namespace ds {
 
 namespace {
 
+// Simple fixed-size thread pool to keep backend execution async.
+// This mirrors the CPU backend model but is local to the Vulkan backend
+// to keep responsibilities self-contained.
 class ThreadPool {
 public:
     explicit ThreadPool(std::size_t thread_count)
@@ -83,6 +86,8 @@ private:
     bool                              stop_;
 };
 
+// Find a memory type index that satisfies the requested properties.
+// Returns UINT32_MAX if no matching type is found.
 uint32_t find_memory_type(const VkPhysicalDeviceMemoryProperties& props,
                           uint32_t type_bits,
                           VkMemoryPropertyFlags flags) {
@@ -95,8 +100,17 @@ uint32_t find_memory_type(const VkPhysicalDeviceMemoryProperties& props,
     return UINT32_MAX;
 }
 
+// Vulkan backend implementation that can:
+//  - Read file data into host-visible staging buffers.
+//  - Copy staging buffers into GPU buffers (file -> GPU).
+//  - Copy GPU buffers into staging buffers and write to disk (GPU -> file).
+//
+// This backend is intentionally minimal. It focuses on correctness and a clear
+// data flow that is suitable for integration into Wine/Proton without shims.
 class VulkanBackend final : public Backend {
 public:
+    // Construct the backend. If external Vulkan objects are provided, this
+    // backend will borrow them without taking ownership.
     explicit VulkanBackend(const VulkanBackendConfig& config)
         : pool_(config.worker_count)
     {
@@ -107,6 +121,8 @@ public:
         cleanup();
     }
 
+    // Submit work asynchronously. The Request is copied into the worker
+    // lambda to decouple lifetime from the caller.
     void submit(Request req, CompletionCallback on_complete) override {
         pool_.submit([this, req, on_complete]() mutable {
             handle_request(req);
@@ -117,6 +133,8 @@ public:
     }
 
 private:
+    // Initialize Vulkan context. Either borrow existing objects from config
+    // or create a minimal Vulkan instance/device/queue/pool.
     void init(const VulkanBackendConfig& config) {
         if (config.device != VK_NULL_HANDLE) {
             instance_ = config.instance;
@@ -186,6 +204,7 @@ private:
             owns_command_pool_ = true;
         }
 
+        // Ensure a command pool exists for transient copy commands.
         if (command_pool_ == VK_NULL_HANDLE) {
             VkCommandPoolCreateInfo pool_info{};
             pool_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -201,6 +220,7 @@ private:
         }
     }
 
+    // Clean up only the Vulkan resources we own.
     void cleanup() {
         if (device_ != VK_NULL_HANDLE) {
             vkDeviceWaitIdle(device_);
@@ -216,6 +236,7 @@ private:
         }
     }
 
+    // Route the request to the appropriate data path based on memory targets.
     void handle_request(Request& req) {
         if (device_ == VK_NULL_HANDLE || physical_device_ == VK_NULL_HANDLE) {
             req.status = RequestStatus::IoError;
@@ -223,15 +244,19 @@ private:
             return;
         }
 
+        // GPU -> file path (write).
         if (req.op == RequestOp::Write && req.src_memory == RequestMemory::Gpu) {
             handle_gpu_to_file(req);
+        // File -> GPU path (read).
         } else if (req.op == RequestOp::Read && req.dst_memory == RequestMemory::Gpu) {
             handle_file_to_gpu(req);
         } else {
+            // Host-only path (read/write).
             handle_host_io(req);
         }
     }
 
+    // Host-only I/O fallback path (no GPU buffers involved).
     void handle_host_io(Request& req) {
         ssize_t io_bytes = 0;
         if (req.op == RequestOp::Write) {
@@ -259,6 +284,7 @@ private:
         }
     }
 
+    // Read file data into a staging buffer, then copy into the GPU buffer.
     void handle_file_to_gpu(Request& req) {
         VkBuffer gpu_buffer = reinterpret_cast<VkBuffer>(req.gpu_buffer);
         if (gpu_buffer == VK_NULL_HANDLE) {
@@ -276,6 +302,7 @@ private:
             return;
         }
 
+        // Stage file contents in a host-visible buffer.
         void* mapped = nullptr;
         vkMapMemory(device_, staging_memory, 0, req.size, 0, &mapped);
         const ssize_t rd = ::pread(
@@ -293,6 +320,7 @@ private:
             return;
         }
 
+        // Copy staged contents into the GPU buffer.
         if (!submit_copy(staging_buffer, gpu_buffer, req.size, 0, req.gpu_offset)) {
             destroy_buffer(staging_buffer, staging_memory);
             req.status = RequestStatus::IoError;
@@ -305,6 +333,7 @@ private:
         req.errno_value = 0;
     }
 
+    // Copy GPU buffer contents into a staging buffer, then write to disk.
     void handle_gpu_to_file(Request& req) {
         VkBuffer gpu_buffer = reinterpret_cast<VkBuffer>(req.gpu_buffer);
         if (gpu_buffer == VK_NULL_HANDLE) {
@@ -322,6 +351,7 @@ private:
             return;
         }
 
+        // Copy GPU buffer contents into staging.
         if (!submit_copy(gpu_buffer, staging_buffer, req.size, req.gpu_offset, 0)) {
             destroy_buffer(staging_buffer, staging_memory);
             req.status = RequestStatus::IoError;
@@ -329,6 +359,7 @@ private:
             return;
         }
 
+        // Write staged contents to disk.
         void* mapped = nullptr;
         vkMapMemory(device_, staging_memory, 0, req.size, 0, &mapped);
         const ssize_t wr = ::pwrite(
@@ -351,6 +382,7 @@ private:
         req.errno_value = 0;
     }
 
+    // Allocate a host-visible staging buffer for file transfers.
     bool create_staging_buffer(std::size_t size,
                                VkBufferUsageFlags usage,
                                VkBuffer& buffer,
@@ -395,6 +427,7 @@ private:
         return true;
     }
 
+    // Free a staging buffer and its memory.
     void destroy_buffer(VkBuffer buffer, VkDeviceMemory memory) {
         if (buffer != VK_NULL_HANDLE) {
             vkDestroyBuffer(device_, buffer, nullptr);
@@ -404,6 +437,9 @@ private:
         }
     }
 
+    // Submit a synchronous copy command and wait for completion.
+    // This is intentionally simple and safe; future versions can
+    // migrate to timeline semaphores or batched submissions.
     bool submit_copy(VkBuffer src,
                      VkBuffer dst,
                      VkDeviceSize size,
@@ -440,6 +476,7 @@ private:
 
         vkEndCommandBuffer(cmd);
 
+        // Fence ensures the copy completes before we read/write staging memory.
         VkFenceCreateInfo fence_info{};
         fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
         VkFence fence = VK_NULL_HANDLE;
