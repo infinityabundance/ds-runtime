@@ -14,8 +14,10 @@
 
 #include <cstddef>    // std::size_t
 #include <cstdint>    // std::uint64_t
+#include <chrono>     // std::chrono::system_clock
 #include <functional> // std::function
 #include <memory>     // std::shared_ptr, std::unique_ptr
+#include <string>     // std::string
 
 namespace ds {
 
@@ -107,6 +109,37 @@ public:
     /// The completion callback is invoked on a backend-owned worker thread.
     virtual void submit(Request req, CompletionCallback on_complete) = 0;
 };
+
+// -----------------------------------------------------------------------------
+// Error reporting
+// -----------------------------------------------------------------------------
+
+/// Rich error context for diagnostics and troubleshooting.
+struct ErrorContext {
+    std::string subsystem;  ///< e.g. "cpu", "vulkan", "io_uring".
+    std::string operation;  ///< e.g. "pread", "vkCmdCopyBuffer".
+    std::string detail;     ///< Free-form detail message.
+    std::string file;       ///< Source file reporting the error.
+    std::string function;   ///< Function reporting the error.
+    int         line = 0;   ///< Line number reporting the error.
+    int         errno_value = 0; ///< errno or backend-specific error code.
+    std::chrono::system_clock::time_point timestamp;
+};
+
+/// Error callback type for diagnostics.
+using ErrorCallback = std::function<void(const ErrorContext&)>;
+
+/// Set a process-wide error callback. Pass nullptr to clear.
+void set_error_callback(ErrorCallback callback);
+
+/// Report an error with rich context.
+void report_error(const std::string& subsystem,
+                  const std::string& operation,
+                  const std::string& detail,
+                  int errno_value,
+                  const char* file,
+                  int line,
+                  const char* function);
 
 // -----------------------------------------------------------------------------
 // Queue

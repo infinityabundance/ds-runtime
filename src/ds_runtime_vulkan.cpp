@@ -160,6 +160,13 @@ private:
             instance_info.pApplicationInfo = &app_info;
 
             if (vkCreateInstance(&instance_info, nullptr, &instance_) != VK_SUCCESS) {
+                report_error("vulkan",
+                             "vkCreateInstance",
+                             "Failed to create Vulkan instance",
+                             EIO,
+                             __FILE__,
+                             __LINE__,
+                             __func__);
                 return;
             }
             owns_instance_ = true;
@@ -167,6 +174,13 @@ private:
             uint32_t device_count = 0;
             vkEnumeratePhysicalDevices(instance_, &device_count, nullptr);
             if (device_count == 0) {
+                report_error("vulkan",
+                             "vkEnumeratePhysicalDevices",
+                             "No Vulkan devices available",
+                             ENODEV,
+                             __FILE__,
+                             __LINE__,
+                             __func__);
                 return;
             }
             std::vector<VkPhysicalDevice> devices(device_count);
@@ -197,6 +211,13 @@ private:
             device_info.pQueueCreateInfos = &queue_info;
 
             if (vkCreateDevice(physical_device_, &device_info, nullptr, &device_) != VK_SUCCESS) {
+                report_error("vulkan",
+                             "vkCreateDevice",
+                             "Failed to create Vulkan device",
+                             EIO,
+                             __FILE__,
+                             __LINE__,
+                             __func__);
                 return;
             }
             owns_device_ = true;
@@ -212,6 +233,14 @@ private:
             pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
             if (vkCreateCommandPool(device_, &pool_info, nullptr, &command_pool_) == VK_SUCCESS) {
                 owns_command_pool_ = true;
+            } else {
+                report_error("vulkan",
+                             "vkCreateCommandPool",
+                             "Failed to create command pool",
+                             EIO,
+                             __FILE__,
+                             __LINE__,
+                             __func__);
             }
         }
 
@@ -239,6 +268,13 @@ private:
     // Route the request to the appropriate data path based on memory targets.
     void handle_request(Request& req) {
         if (device_ == VK_NULL_HANDLE || physical_device_ == VK_NULL_HANDLE) {
+            report_error("vulkan",
+                         "handle_request",
+                         "Vulkan device not initialized",
+                         EINVAL,
+                         __FILE__,
+                         __LINE__,
+                         __func__);
             req.status = RequestStatus::IoError;
             req.errno_value = EINVAL;
             return;
@@ -288,6 +324,13 @@ private:
     void handle_file_to_gpu(Request& req) {
         VkBuffer gpu_buffer = reinterpret_cast<VkBuffer>(req.gpu_buffer);
         if (gpu_buffer == VK_NULL_HANDLE) {
+            report_error("vulkan",
+                         "file_to_gpu",
+                         "GPU buffer handle is null",
+                         EINVAL,
+                         __FILE__,
+                         __LINE__,
+                         __func__);
             req.status = RequestStatus::IoError;
             req.errno_value = EINVAL;
             return;
@@ -297,6 +340,13 @@ private:
         VkDeviceMemory staging_memory = VK_NULL_HANDLE;
         if (!create_staging_buffer(req.size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                                    staging_buffer, staging_memory)) {
+            report_error("vulkan",
+                         "create_staging_buffer",
+                         "Failed to allocate staging buffer",
+                         ENOMEM,
+                         __FILE__,
+                         __LINE__,
+                         __func__);
             req.status = RequestStatus::IoError;
             req.errno_value = ENOMEM;
             return;
@@ -314,6 +364,13 @@ private:
         vkUnmapMemory(device_, staging_memory);
 
         if (rd < 0) {
+            report_error("vulkan",
+                         "pread",
+                         "Failed to read file into staging buffer",
+                         errno,
+                         __FILE__,
+                         __LINE__,
+                         __func__);
             destroy_buffer(staging_buffer, staging_memory);
             req.status = RequestStatus::IoError;
             req.errno_value = errno;
@@ -322,6 +379,13 @@ private:
 
         // Copy staged contents into the GPU buffer.
         if (!submit_copy(staging_buffer, gpu_buffer, req.size, 0, req.gpu_offset)) {
+            report_error("vulkan",
+                         "vkCmdCopyBuffer",
+                         "Failed to copy staging buffer to GPU buffer",
+                         EIO,
+                         __FILE__,
+                         __LINE__,
+                         __func__);
             destroy_buffer(staging_buffer, staging_memory);
             req.status = RequestStatus::IoError;
             req.errno_value = EIO;
@@ -337,6 +401,13 @@ private:
     void handle_gpu_to_file(Request& req) {
         VkBuffer gpu_buffer = reinterpret_cast<VkBuffer>(req.gpu_buffer);
         if (gpu_buffer == VK_NULL_HANDLE) {
+            report_error("vulkan",
+                         "gpu_to_file",
+                         "GPU buffer handle is null",
+                         EINVAL,
+                         __FILE__,
+                         __LINE__,
+                         __func__);
             req.status = RequestStatus::IoError;
             req.errno_value = EINVAL;
             return;
@@ -346,6 +417,13 @@ private:
         VkDeviceMemory staging_memory = VK_NULL_HANDLE;
         if (!create_staging_buffer(req.size, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                    staging_buffer, staging_memory)) {
+            report_error("vulkan",
+                         "create_staging_buffer",
+                         "Failed to allocate staging buffer",
+                         ENOMEM,
+                         __FILE__,
+                         __LINE__,
+                         __func__);
             req.status = RequestStatus::IoError;
             req.errno_value = ENOMEM;
             return;
@@ -353,6 +431,13 @@ private:
 
         // Copy GPU buffer contents into staging.
         if (!submit_copy(gpu_buffer, staging_buffer, req.size, req.gpu_offset, 0)) {
+            report_error("vulkan",
+                         "vkCmdCopyBuffer",
+                         "Failed to copy GPU buffer to staging buffer",
+                         EIO,
+                         __FILE__,
+                         __LINE__,
+                         __func__);
             destroy_buffer(staging_buffer, staging_memory);
             req.status = RequestStatus::IoError;
             req.errno_value = EIO;
@@ -373,6 +458,13 @@ private:
         destroy_buffer(staging_buffer, staging_memory);
 
         if (wr < 0) {
+            report_error("vulkan",
+                         "pwrite",
+                         "Failed to write staging buffer to file",
+                         errno,
+                         __FILE__,
+                         __LINE__,
+                         __func__);
             req.status = RequestStatus::IoError;
             req.errno_value = errno;
             return;
@@ -394,6 +486,13 @@ private:
         buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
         if (vkCreateBuffer(device_, &buffer_info, nullptr, &buffer) != VK_SUCCESS) {
+            report_error("vulkan",
+                         "vkCreateBuffer",
+                         "Failed to create staging buffer",
+                         EIO,
+                         __FILE__,
+                         __LINE__,
+                         __func__);
             return false;
         }
 
@@ -407,6 +506,13 @@ private:
         );
 
         if (type_index == UINT32_MAX) {
+            report_error("vulkan",
+                         "find_memory_type",
+                         "No suitable memory type for staging buffer",
+                         ENOMEM,
+                         __FILE__,
+                         __LINE__,
+                         __func__);
             vkDestroyBuffer(device_, buffer, nullptr);
             buffer = VK_NULL_HANDLE;
             return false;
@@ -418,6 +524,13 @@ private:
         alloc_info.memoryTypeIndex = type_index;
 
         if (vkAllocateMemory(device_, &alloc_info, nullptr, &memory) != VK_SUCCESS) {
+            report_error("vulkan",
+                         "vkAllocateMemory",
+                         "Failed to allocate staging buffer memory",
+                         ENOMEM,
+                         __FILE__,
+                         __LINE__,
+                         __func__);
             vkDestroyBuffer(device_, buffer, nullptr);
             buffer = VK_NULL_HANDLE;
             return false;
@@ -448,6 +561,13 @@ private:
         std::lock_guard<std::mutex> lock(vk_mutex_);
 
         if (command_pool_ == VK_NULL_HANDLE || queue_ == VK_NULL_HANDLE) {
+            report_error("vulkan",
+                         "submit_copy",
+                         "Command pool or queue not initialized",
+                         EINVAL,
+                         __FILE__,
+                         __LINE__,
+                         __func__);
             return false;
         }
 
@@ -459,6 +579,13 @@ private:
 
         VkCommandBuffer cmd = VK_NULL_HANDLE;
         if (vkAllocateCommandBuffers(device_, &alloc_info, &cmd) != VK_SUCCESS) {
+            report_error("vulkan",
+                         "vkAllocateCommandBuffers",
+                         "Failed to allocate command buffer",
+                         EIO,
+                         __FILE__,
+                         __LINE__,
+                         __func__);
             return false;
         }
 
@@ -481,6 +608,13 @@ private:
         fence_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
         VkFence fence = VK_NULL_HANDLE;
         if (vkCreateFence(device_, &fence_info, nullptr, &fence) != VK_SUCCESS) {
+            report_error("vulkan",
+                         "vkCreateFence",
+                         "Failed to create fence",
+                         EIO,
+                         __FILE__,
+                         __LINE__,
+                         __func__);
             vkFreeCommandBuffers(device_, command_pool_, 1, &cmd);
             return false;
         }
@@ -491,6 +625,13 @@ private:
         submit_info.pCommandBuffers = &cmd;
 
         if (vkQueueSubmit(queue_, 1, &submit_info, fence) != VK_SUCCESS) {
+            report_error("vulkan",
+                         "vkQueueSubmit",
+                         "Queue submission failed",
+                         EIO,
+                         __FILE__,
+                         __LINE__,
+                         __func__);
             vkDestroyFence(device_, fence, nullptr);
             vkFreeCommandBuffers(device_, command_pool_, 1, &cmd);
             return false;

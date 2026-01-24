@@ -82,6 +82,7 @@ endif()
 set(DS_RUNTIME_SOURCES
     src/ds_runtime.cpp
     src/ds_runtime_c.cpp
+    src/ds_runtime_logging.cpp
 )
 
 if (Vulkan_FOUND)

@@ -180,6 +180,13 @@ public:
         pool_.submit([req, on_complete]() mutable {
             if ((req.op == RequestOp::Read && req.dst_memory == RequestMemory::Gpu) ||
                 (req.op == RequestOp::Write && req.src_memory == RequestMemory::Gpu)) {
+                report_error("cpu",
+                             "submit",
+                             "GPU memory requested on CPU backend",
+                             EINVAL,
+                             __FILE__,
+                             __LINE__,
+                             __func__);
                 req.status = RequestStatus::IoError;
                 req.errno_value = EINVAL;
                 if (on_complete) {
@@ -208,6 +215,13 @@ public:
 
             if (io_bytes < 0) {
                 // I/O error: capture errno and mark the request as failed.
+                report_error("cpu",
+                             req.op == RequestOp::Write ? "pwrite" : "pread",
+                             "POSIX I/O failed",
+                             errno,
+                             __FILE__,
+                             __LINE__,
+                             __func__);
                 req.status      = RequestStatus::IoError;
                 req.errno_value = errno;
             } else {

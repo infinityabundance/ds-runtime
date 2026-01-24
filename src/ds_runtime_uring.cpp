@@ -25,7 +25,15 @@ public:
         : entries_(config.entries ? config.entries : 1u)
         , stop_(false)
     {
-        if (io_uring_queue_init(entries_, &ring_, 0) != 0) {
+        const int init_rc = io_uring_queue_init(entries_, &ring_, 0);
+        if (init_rc != 0) {
+            report_error("io_uring",
+                         "io_uring_queue_init",
+                         "Failed to initialize io_uring ring",
+                         -init_rc,
+                         __FILE__,
+                         __LINE__,
+                         __func__);
             init_failed_ = true;
         } else {
             worker_ = std::thread([this]() { worker_loop(); });
@@ -51,6 +59,13 @@ public:
     // Submit a host-memory-only request to the ring worker thread.
     void submit(Request req, CompletionCallback on_complete) override {
         if (init_failed_) {
+            report_error("io_uring",
+                         "submit",
+                         "Backend initialization failed",
+                         EINVAL,
+                         __FILE__,
+                         __LINE__,
+                         __func__);
             req.status = RequestStatus::IoError;
             req.errno_value = EINVAL;
             if (on_complete) {
@@ -61,6 +76,13 @@ public:
 
         if ((req.op == RequestOp::Read && req.dst_memory == RequestMemory::Gpu) ||
             (req.op == RequestOp::Write && req.src_memory == RequestMemory::Gpu)) {
+            report_error("io_uring",
+                         "submit",
+                         "GPU memory requested on io_uring backend",
+                         EINVAL,
+                         __FILE__,
+                         __LINE__,
+                         __func__);
             req.status = RequestStatus::IoError;
             req.errno_value = EINVAL;
             if (on_complete) {
@@ -104,6 +126,13 @@ private:
 
                 io_uring_sqe* sqe = io_uring_get_sqe(&ring_);
                 if (!sqe) {
+                    report_error("io_uring",
+                                 "io_uring_get_sqe",
+                                 "Submission queue is full",
+                                 EBUSY,
+                                 __FILE__,
+                                 __LINE__,
+                                 __func__);
                     op->req.status = RequestStatus::IoError;
                     op->req.errno_value = EBUSY;
                     if (op->callback) {
@@ -135,12 +164,27 @@ private:
 
             const int submitted = io_uring_submit(&ring_);
             if (submitted <= 0) {
+                report_error("io_uring",
+                             "io_uring_submit",
+                             "Submission failed",
+                             submitted,
+                             __FILE__,
+                             __LINE__,
+                             __func__);
                 continue;
             }
             unsigned completed = 0;
             while (completed < static_cast<unsigned>(submitted)) {
                 io_uring_cqe* cqe = nullptr;
-                if (io_uring_wait_cqe(&ring_, &cqe) != 0 || !cqe) {
+                const int wait_rc = io_uring_wait_cqe(&ring_, &cqe);
+                if (wait_rc != 0 || !cqe) {
+                    report_error("io_uring",
+                                 "io_uring_wait_cqe",
+                                 "Failed waiting for completion",
+                                 wait_rc,
+                                 __FILE__,
+                                 __LINE__,
+                                 __func__);
                     break;
                 }
                 auto* op = static_cast<PendingOp*>(io_uring_cqe_get_data(cqe));

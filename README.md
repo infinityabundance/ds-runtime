@@ -139,6 +139,11 @@ The queue **does not perform I/O itself**.
 
 Abstract execution interface.
 
+Error reporting:
+
+- `ds::set_error_callback` installs a process-wide hook for rich diagnostics
+- `ds::report_error` emits subsystem/operation/file/line context and timestamps
+
 Current implementation:
 
 - **CPU backend**
