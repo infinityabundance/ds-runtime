@@ -4,7 +4,7 @@
   <img src="assets/ds_runtime_logo.png" alt="ds-runtime logo" width="180">
 </p>
 
-Experimental Linux-native DirectStorage-style runtime (CPU today, GPU tomorrow) GPU/Vulkan backend, towards Wine/Proton integration. 
+Experimental Linux-native DirectStorage-style runtime (CPU today, GPU tomorrow) with an early GPU/Vulkan backend, towards Wine/Proton integration. 
 
 
 ## 🔎 Overview
@@ -36,7 +36,7 @@ This repository intentionally prioritizes structure, clarity, and correctness ov
 
 - Status: Experimental
 - Backend: CPU (implemented)
-- GPU/Vulkan backend: Planned
+- GPU/Vulkan backend: Experimental (file ↔ GPU buffer transfers)
 
 The current codebase implements a complete, working CPU backend and a clean public API designed to support GPU-accelerated backends in the future.
 
@@ -101,7 +101,15 @@ Describes what to load:
 
 - Destination pointer
 
+- Optional GPU buffer/offset for Vulkan-backed transfers
+
+- Operation (read/write)
+
+- Memory location (host or GPU buffer)
+
 - Compression mode
+
+- Optional GPU buffer handle + offset when using the Vulkan backend
 
 - Completion status / error
 
@@ -135,7 +143,11 @@ Current implementation:
 
 - **CPU backend**
 
-- `pread()`-based I/O
+- `pread()`/`pwrite()`-based I/O
+
+- **Vulkan backend (experimental)**
+
+- `pread()`/`pwrite()` plus Vulkan staging buffer copies to GPU buffers
 
 - Small internal thread pool
 
@@ -220,6 +232,9 @@ This is intended as a **foundational layer** that could back a future
 `dstorage.dll` implementation in Wine/Proton, with GPU acceleration added
 incrementally once semantics and integration points are validated.
 
+For integration guidance (including a no-shim option), see
+[docs/wine_proton.md](docs/wine_proton.md).
+
 --- 
 
 ## 🎬 Demo
@@ -266,6 +281,8 @@ pthreads
 
 CMake ≥ 3.16
 
+Vulkan SDK (optional, required for the Vulkan backend)
+
 ### Build steps
 
 ```bash 
@@ -284,6 +301,28 @@ Run the demo:
 # from inside build/examples/
 ./ds_demo
 ``` 
+
+### Shared library + C API
+
+The build produces a shared object `libds_runtime.so` that exposes both the
+C++ API (`include/ds_runtime.hpp`) and a C-compatible ABI (`include/ds_runtime_c.h`).
+This makes it easier to integrate the runtime with non-C++ code or FFI layers
+like Wine or Proton shims.
+
+To link against the shared object from another project:
+
+```bash
+cc -I/path/to/ds-runtime/include \
+   -L/path/to/ds-runtime/build \
+   -lds_runtime \
+   your_app.c
+```
+
+### Vulkan backend (experimental)
+
+When built with Vulkan, you can construct a Vulkan backend and submit requests
+with `RequestMemory::Gpu` to move data between files and GPU buffers. Requests
+use `gpu_buffer` + `gpu_offset` to identify the destination/source GPU buffer.
 ---
 
 ## 🔭 Repository layout
@@ -293,9 +332,11 @@ Run the demo:
 │
 ├── include/                  # Public C++ API headers
 │   └── ds_runtime.hpp        # Core DirectStorage-style runtime interface
+│   └── ds_runtime_vulkan.hpp # Vulkan backend interface (experimental)
 │
 ├── src/                      # Runtime implementation
 │   └── ds_runtime.cpp        # Queue, backend, and CPU execution logic
+│   └── ds_runtime_vulkan.cpp # Vulkan backend implementation
 │
 ├── examples/                 # Standalone example programs
 │   ├── ds_demo_main.cpp      # CPU-only demo exercising ds::Queue and requests

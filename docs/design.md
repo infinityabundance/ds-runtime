@@ -55,19 +55,17 @@ hardware-accelerated paths.
 
 ---
 
-### Vulkan backend (planned)
+### Vulkan backend (experimental)
 
-A future `VulkanBackend` will implement the same `ds::Backend` interface.
+An experimental `VulkanBackend` implements the same `ds::Backend` interface.
 
 Expected responsibilities:
 
 - Read file data into host-visible staging buffers
 
-- Dispatch Vulkan compute workloads for:
+- Issue Vulkan buffer copies between staging buffers and GPU buffers
 
-***buffer copies
-
-***decompression
+- Dispatch Vulkan compute workloads for future decompression stages
 
 Signal completion via fences or timeline semaphores
 
