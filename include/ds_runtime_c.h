@@ -77,6 +77,14 @@ typedef struct ds_vulkan_backend_config {
 ds_backend_t* ds_make_vulkan_backend(const ds_vulkan_backend_config* config);
 #endif
 
+#ifdef DS_RUNTIME_HAS_IO_URING
+typedef struct ds_io_uring_backend_config {
+    unsigned entries;
+} ds_io_uring_backend_config;
+
+ds_backend_t* ds_make_io_uring_backend(const ds_io_uring_backend_config* config);
+#endif
+
 #ifdef __cplusplus
 }
 #endif

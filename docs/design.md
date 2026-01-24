@@ -79,6 +79,19 @@ This allows correctness to be validated independently of GPU acceleration.
 
 ---
 
+### io_uring backend (experimental)
+
+An experimental `IoUringBackend` executes host-side requests using `io_uring`.
+
+Expected responsibilities:
+
+- Submit read/write operations via the kernel ring
+- Invoke completion callbacks when CQEs arrive
+- Reject GPU-targeted requests (host-only backend)
+
+This backend provides a path toward lower-overhead I/O without changing the
+public queue API.
+
 ### Compression handling
 
 The current implementation includes a demo transform to validate

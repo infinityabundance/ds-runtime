@@ -67,6 +67,10 @@ endif()
 # ============================================================
 
 find_package(Vulkan QUIET)
+find_package(PkgConfig QUIET)
+if (PkgConfig_FOUND)
+    pkg_check_modules(LIBURING liburing)
+endif()
 
 # ============================================================
 # Core runtime library
@@ -82,6 +86,9 @@ set(DS_RUNTIME_SOURCES
 
 if (Vulkan_FOUND)
     list(APPEND DS_RUNTIME_SOURCES src/ds_runtime_vulkan.cpp)
+endif()
+if (LIBURING_FOUND)
+    list(APPEND DS_RUNTIME_SOURCES src/ds_runtime_uring.cpp)
 endif()
 
 if (DS_BUILD_SHARED)
@@ -102,6 +109,11 @@ if (DS_BUILD_SHARED)
         target_link_libraries(ds_runtime PUBLIC Vulkan::Vulkan)
         target_compile_definitions(ds_runtime PUBLIC DS_RUNTIME_HAS_VULKAN)
     endif()
+    if (LIBURING_FOUND)
+        target_link_libraries(ds_runtime PUBLIC ${LIBURING_LIBRARIES})
+        target_include_directories(ds_runtime PUBLIC ${LIBURING_INCLUDE_DIRS})
+        target_compile_definitions(ds_runtime PUBLIC DS_RUNTIME_HAS_IO_URING)
+    endif()
 endif()
 
 if (DS_BUILD_STATIC)
@@ -117,6 +129,11 @@ if (DS_BUILD_STATIC)
     if (Vulkan_FOUND)
         target_link_libraries(ds_runtime_static PUBLIC Vulkan::Vulkan)
         target_compile_definitions(ds_runtime_static PUBLIC DS_RUNTIME_HAS_VULKAN)
+    endif()
+    if (LIBURING_FOUND)
+        target_link_libraries(ds_runtime_static PUBLIC ${LIBURING_LIBRARIES})
+        target_include_directories(ds_runtime_static PUBLIC ${LIBURING_INCLUDE_DIRS})
+        target_compile_definitions(ds_runtime_static PUBLIC DS_RUNTIME_HAS_IO_URING)
     endif()
 endif()
 
@@ -188,6 +205,7 @@ install(FILES
     include/ds_runtime.hpp
     include/ds_runtime_c.h
     include/ds_runtime_vulkan.hpp
+    include/ds_runtime_uring.hpp
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
@@ -196,6 +214,10 @@ set(DS_RUNTIME_PKG_CFLAGS_EXTRA "")
 if (Vulkan_FOUND)
     set(DS_RUNTIME_PKG_LIBS_EXTRA "-lvulkan")
     set(DS_RUNTIME_PKG_CFLAGS_EXTRA "-DDS_RUNTIME_HAS_VULKAN")
+endif()
+if (LIBURING_FOUND)
+    set(DS_RUNTIME_PKG_LIBS_EXTRA "${DS_RUNTIME_PKG_LIBS_EXTRA} -luring")
+    set(DS_RUNTIME_PKG_CFLAGS_EXTRA "${DS_RUNTIME_PKG_CFLAGS_EXTRA} -DDS_RUNTIME_HAS_IO_URING")
 endif()
 
 configure_file(

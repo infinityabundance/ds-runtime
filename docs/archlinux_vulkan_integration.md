@@ -56,6 +56,12 @@ For GPU drivers:
 - **AMD**: `mesa` + `vulkan-radeon`
 - **Intel**: `mesa` + `vulkan-intel`
 
+For io_uring experimentation:
+
+```bash
+sudo pacman -S --needed liburing
+```
+
 ---
 
 ## No-shim integration steps (recommended)

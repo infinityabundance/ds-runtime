@@ -8,6 +8,9 @@
 #ifdef DS_RUNTIME_HAS_VULKAN
 #include "ds_runtime_vulkan.hpp"
 #endif
+#ifdef DS_RUNTIME_HAS_IO_URING
+#include "ds_runtime_uring.hpp"
+#endif
 
 #include <atomic>
 #include <condition_variable>
@@ -247,5 +250,15 @@ ds_backend_t* ds_make_vulkan_backend(const ds_vulkan_backend_config* config) {
     cpp_config.command_pool = reinterpret_cast<VkCommandPool>(config->command_pool);
     cpp_config.worker_count = config->worker_count;
     return new ds_backend_t{ds::make_vulkan_backend(cpp_config)};
+}
+#endif
+
+#ifdef DS_RUNTIME_HAS_IO_URING
+ds_backend_t* ds_make_io_uring_backend(const ds_io_uring_backend_config* config) {
+    ds::IoUringBackendConfig cpp_config{};
+    if (config) {
+        cpp_config.entries = config->entries;
+    }
+    return new ds_backend_t{ds::make_io_uring_backend(cpp_config)};
 }
 #endif

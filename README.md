@@ -149,6 +149,10 @@ Current implementation:
 
 - `pread()`/`pwrite()` plus Vulkan staging buffer copies to GPU buffers
 
+- **io_uring backend (experimental)**
+
+- `io_uring` host I/O path (host memory only)
+
 - Small internal thread pool
 
 - Demo “decompression” stage (uppercase transform)
@@ -156,8 +160,6 @@ Current implementation:
 Planned backends:
 
 - Vulkan compute backend (GPU copy / decompression)
-
-- `io_uring`-based backend
 
 - Vendor-specific GPU paths
 
@@ -284,6 +286,8 @@ CMake ≥ 3.16
 
 Vulkan SDK (optional, required for the Vulkan backend)
 
+liburing (optional, required for the io_uring backend)
+
 ### Build steps
 
 ```bash 
@@ -334,10 +338,12 @@ use `gpu_buffer` + `gpu_offset` to identify the destination/source GPU buffer.
 ├── include/                  # Public C++ API headers
 │   └── ds_runtime.hpp        # Core DirectStorage-style runtime interface
 │   └── ds_runtime_vulkan.hpp # Vulkan backend interface (experimental)
+│   └── ds_runtime_uring.hpp  # io_uring backend interface (experimental)
 │
 ├── src/                      # Runtime implementation
 │   └── ds_runtime.cpp        # Queue, backend, and CPU execution logic
 │   └── ds_runtime_vulkan.cpp # Vulkan backend implementation
+│   └── ds_runtime_uring.cpp  # io_uring backend implementation
 │
 ├── examples/                 # Standalone example programs
 │   ├── ds_demo_main.cpp      # CPU-only demo exercising ds::Queue and requests
