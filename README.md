@@ -275,6 +275,11 @@ raw   : "Hello DirectStorage-style queue on Linux!"
 upper : "HELLO DIRECTSTORAGE-STYLE QUEUE ON LINUX!"
 
 ``` 
+
+Additional demo:
+
+- `ds_asset_streaming` writes a packed asset file and issues concurrent reads,
+  exercising request offsets and the error reporting callback.
 ---
 
 ## 🛠️ Building
@@ -311,6 +316,23 @@ Run the demo:
 # from inside build/examples/
 ./ds_demo
 ``` 
+
+### Tests
+
+Enable tests with:
+
+```bash
+cmake -B build -S . -DDS_BUILD_TESTS=ON
+cmake --build build
+ctest --test-dir build
+```
+
+Run the asset streaming demo:
+
+```bash
+# from inside build/examples/
+./ds_asset_streaming
+```
 
 ### Shared library + C API
 
@@ -352,6 +374,7 @@ use `gpu_buffer` + `gpu_offset` to identify the destination/source GPU buffer.
 │
 ├── examples/                 # Standalone example programs
 │   ├── ds_demo_main.cpp      # CPU-only demo exercising ds::Queue and requests
+│   ├── asset_streaming_main.cpp # Asset streaming demo with concurrent reads
 │   │
 │   └── vk-copy-test/         # Experimental Vulkan groundwork
 │       ├── copy.comp         # Vulkan compute shader (GLSL)

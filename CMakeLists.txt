@@ -150,10 +150,16 @@ if (DS_BUILD_EXAMPLES)
         examples/ds_demo_main.cpp
     )
 
+    add_executable(ds_asset_streaming
+        examples/asset_streaming_main.cpp
+    )
+
     if (TARGET ds_runtime)
         target_link_libraries(ds_demo PRIVATE ds_runtime)
+        target_link_libraries(ds_asset_streaming PRIVATE ds_runtime)
     elseif (TARGET ds_runtime_static)
         target_link_libraries(ds_demo PRIVATE ds_runtime_static)
+        target_link_libraries(ds_asset_streaming PRIVATE ds_runtime_static)
     endif()
 
     if (Vulkan_FOUND)
@@ -180,8 +186,30 @@ endif()
 # ============================================================
 
 if (DS_BUILD_TESTS)
-    # add_executable(ds_runtime_tests tests/basic_queue_test.cpp)
-    # target_link_libraries(ds_runtime_tests PRIVATE ds_runtime)
+    add_executable(ds_runtime_tests
+        tests/basic_queue_test.cpp
+    )
+
+    if (TARGET ds_runtime)
+        target_link_libraries(ds_runtime_tests PRIVATE ds_runtime)
+    elseif (TARGET ds_runtime_static)
+        target_link_libraries(ds_runtime_tests PRIVATE ds_runtime_static)
+    endif()
+
+    enable_testing()
+    add_test(NAME ds_runtime_tests COMMAND ds_runtime_tests)
+
+    if (LIBURING_FOUND)
+        add_executable(ds_io_uring_tests
+            tests/io_uring_backend_test.cpp
+        )
+        if (TARGET ds_runtime)
+            target_link_libraries(ds_io_uring_tests PRIVATE ds_runtime)
+        elseif (TARGET ds_runtime_static)
+            target_link_libraries(ds_io_uring_tests PRIVATE ds_runtime_static)
+        endif()
+        add_test(NAME ds_io_uring_tests COMMAND ds_io_uring_tests)
+    endif()
 endif()
 
 # ============================================================
