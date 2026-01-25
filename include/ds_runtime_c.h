@@ -15,8 +15,7 @@ typedef struct ds_queue ds_queue_t;
 
 typedef enum ds_compression {
     DS_COMPRESSION_NONE = 0,
-    DS_COMPRESSION_FAKE_UPPERCASE = 1,
-    DS_COMPRESSION_GDEFLATE = 2
+    DS_COMPRESSION_FAKE_UPPERCASE = 1
 } ds_compression;
 
 typedef enum ds_request_status {
@@ -43,7 +42,6 @@ typedef struct ds_request {
     const void*        src;
     void*              gpu_buffer;
     uint64_t           gpu_offset;
-    size_t             bytes_transferred;
     ds_request_op      op;
     ds_request_memory  dst_memory;
     ds_request_memory  src_memory;
@@ -64,9 +62,6 @@ void ds_queue_enqueue(ds_queue_t* queue, ds_request* request);
 void ds_queue_submit_all(ds_queue_t* queue, ds_completion_callback callback, void* user_data);
 void ds_queue_wait_all(ds_queue_t* queue);
 size_t ds_queue_in_flight(const ds_queue_t* queue);
-size_t ds_queue_total_completed(const ds_queue_t* queue);
-size_t ds_queue_total_failed(const ds_queue_t* queue);
-size_t ds_queue_total_bytes_transferred(const ds_queue_t* queue);
 
 #ifdef DS_RUNTIME_HAS_VULKAN
 typedef struct ds_vulkan_backend_config {
