@@ -1,5 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-<<<<<<< HEAD
 //
 // ds-runtime public API
 //
@@ -13,10 +12,12 @@
 
 #pragma once
 
-#include <cstddef>      // std::size_t
-#include <cstdint>      // std::uint64_t
-#include <functional>   // std::function
-#include <memory>       // std::shared_ptr, std::unique_ptr
+#include <cstddef>    // std::size_t
+#include <cstdint>    // std::uint64_t
+#include <chrono>     // std::chrono::system_clock
+#include <functional> // std::function
+#include <memory>     // std::shared_ptr, std::unique_ptr
+#include <string>     // std::string
 
 namespace ds {
 
@@ -30,7 +31,8 @@ namespace ds {
 /// Real backends could extend this enum with actual codecs (e.g. GDeflate).
 enum class Compression {
     None,          ///< No compression; data is read as-is.
-    FakeUppercase  ///< Demo mode: uppercase ASCII bytes after reading.
+    FakeUppercase, ///< Demo mode: uppercase ASCII bytes after reading.
+    GDeflate       ///< Placeholder for GDeflate support (not yet implemented).
 };
 
 /// Status of a Request after execution by a Backend.
@@ -41,25 +43,44 @@ enum class RequestStatus {
     // Additional statuses could be added later (e.g. Cancelled).
 };
 
+/// Operation type for a Request.
+enum class RequestOp {
+    Read,  ///< Read data from the file descriptor into dst.
+    Write  ///< Write data from src into the file descriptor.
+};
+
+/// Memory location for request buffers.
+enum class RequestMemory {
+    Host, ///< Buffer resides in host memory.
+    Gpu   ///< Buffer resides in a GPU buffer (Vulkan backend).
+};
+
 // -----------------------------------------------------------------------------
 // Request
 // -----------------------------------------------------------------------------
 
 /// Description of a single I/O operation.
 ///
-/// A Request describes a read from a POSIX file descriptor into a caller-
-/// supplied buffer, optionally followed by a decompression step. The Request
+/// A Request describes a read or write on a POSIX file descriptor, optionally
+/// followed by a decompression step for reads. The Request
 /// object itself is passed by value into the backend; the caller retains
-/// ownership of the underlying buffers (dst) and must keep them alive until
+/// ownership of the underlying buffers (dst/src) and must keep them alive until
 /// completion.
 struct Request {
     int           fd          = -1;      ///< POSIX file descriptor.
     std::uint64_t offset      = 0;       ///< Byte offset within the file.
     std::size_t   size        = 0;       ///< Number of bytes to read into dst.
-    void*         dst         = nullptr; ///< Destination buffer owned by caller.
+    void*         dst         = nullptr; ///< Destination buffer for host reads.
+    const void*   src         = nullptr; ///< Source buffer for host writes.
+    void*         gpu_buffer  = nullptr; ///< Vulkan VkBuffer handle for GPU transfers.
+    std::uint64_t gpu_offset  = 0;       ///< Byte offset into gpu_buffer.
+    std::size_t   bytes_transferred = 0; ///< Bytes successfully read/written.
 
-    Compression   compression = Compression::None;   ///< Compression mode.
-    RequestStatus status      = RequestStatus::Pending; ///< Result status.
+    RequestOp     op          = RequestOp::Read;       ///< Read or write operation.
+    RequestMemory dst_memory  = RequestMemory::Host;   ///< Destination memory location.
+    RequestMemory src_memory  = RequestMemory::Host;   ///< Source memory location.
+    Compression   compression = Compression::None;       ///< Compression mode.
+    RequestStatus status      = RequestStatus::Pending;  ///< Result status.
     int           errno_value = 0;        ///< errno value on IoError, 0 otherwise.
 };
 
@@ -78,82 +99,9 @@ using CompletionCallback = std::function<void(Request&)>;
 /// A Backend implementation is responsible for actually executing Requests:
 /// performing disk I/O, running any decompression, and invoking completion
 /// callbacks. Backends may use CPU threads, GPU queues, io_uring, etc.
-=======
-#ifndef DS_RUNTIME_HPP
-#define DS_RUNTIME_HPP
-
-#include <cstddef>
-#include <cstdint>
-#include <functional>
-#include <memory>
-#include <string>
-#include <vector>
-
-namespace ds {
-
-/**
- * @brief Compression mode for a request.
- *
- * In a real implementation, this would include concrete formats
- * (e.g. GDeflate). For now we keep it simple and only distinguish
- * between "none" and "some transform".
- */
-enum class Compression {
-    None,
-    FakeUppercase, ///< Demo-only "compression": transforms data to uppercase.
-};
-
-/**
- * @brief Status of an I/O request.
- */
-enum class RequestStatus {
-    Pending,
-    Ok,
-    IoError,
-    Cancelled,
-};
-
-/**
- * @brief Description of a single I/O request.
- *
- * This is deliberately simple and POSIX-centric:
- *  - fd:     a Linux file descriptor (must remain valid while the request runs)
- *  - offset: byte offset in the file
- *  - size:   how many bytes to read
- *  - dst:    destination buffer in host memory (must be at least size bytes)
- */
-struct Request {
-    int                 fd           = -1;
-    std::uint64_t       offset       = 0;
-    std::size_t         size         = 0;
-    void*               dst          = nullptr;
-    Compression         compression  = Compression::None;
-    RequestStatus       status       = RequestStatus::Pending;
-    int                 errno_value  = 0;  ///< Set if status == IoError.
-};
-
-/**
- * @brief Completion callback type.
- *
- * Called once per request, from a worker thread, after the I/O and
- * any CPU-side post-processing (e.g. decompression) is finished.
- */
-using CompletionCallback = std::function<void(Request&)>;
-
-/**
- * @brief Abstract backend interface.
- *
- * Different implementations can route requests to:
- *  - a pure CPU path (pread + CPU decompression),
- *  - a Vulkan compute path for GPU decompression,
- *  - vendor-specific paths (CUDA, ROCm, etc.).
- */
->>>>>>> origin/main
 class Backend {
 public:
     virtual ~Backend() = default;
-
-<<<<<<< HEAD
     /// Submit a Request for execution.
     ///
     /// The Request is passed by value into the backend implementation. The
@@ -163,6 +111,54 @@ public:
     /// The completion callback is invoked on a backend-owned worker thread.
     virtual void submit(Request req, CompletionCallback on_complete) = 0;
 };
+
+// -----------------------------------------------------------------------------
+// Error reporting
+// -----------------------------------------------------------------------------
+
+/// Rich error context for diagnostics and troubleshooting.
+struct ErrorContext {
+    std::string subsystem;  ///< e.g. "cpu", "vulkan", "io_uring".
+    std::string operation;  ///< e.g. "pread", "vkCmdCopyBuffer".
+    std::string detail;     ///< Free-form detail message.
+    std::string file;       ///< Source file reporting the error.
+    std::string function;   ///< Function reporting the error.
+    int         line = 0;   ///< Line number reporting the error.
+    int         errno_value = 0; ///< errno or backend-specific error code.
+    std::chrono::system_clock::time_point timestamp;
+    bool        has_request = false; ///< True when request-specific fields are populated.
+    int         fd = -1;             ///< File descriptor involved in the request.
+    std::uint64_t offset = 0;        ///< Request byte offset.
+    std::size_t  size = 0;           ///< Request size in bytes.
+    RequestOp    op = RequestOp::Read; ///< Request operation.
+    RequestMemory src_memory = RequestMemory::Host; ///< Source memory type.
+    RequestMemory dst_memory = RequestMemory::Host; ///< Destination memory type.
+};
+
+/// Error callback type for diagnostics.
+using ErrorCallback = std::function<void(const ErrorContext&)>;
+
+/// Set a process-wide error callback. Pass nullptr to clear.
+void set_error_callback(ErrorCallback callback);
+
+/// Report an error with rich context.
+void report_error(const std::string& subsystem,
+                  const std::string& operation,
+                  const std::string& detail,
+                  int errno_value,
+                  const char* file,
+                  int line,
+                  const char* function);
+
+/// Report an error with request context attached.
+void report_request_error(const std::string& subsystem,
+                          const std::string& operation,
+                          const std::string& detail,
+                          const Request& request,
+                          int errno_value,
+                          const char* file,
+                          int line,
+                          const char* function);
 
 // -----------------------------------------------------------------------------
 // Queue
@@ -244,83 +240,3 @@ private:
 std::shared_ptr<Backend> make_cpu_backend(std::size_t worker_count = 1);
 
 } // namespace ds
-=======
-    /**
-     * @brief Submit a single request for asynchronous execution.
-     *
-     * Implementations must:
-     *  - Not block the caller.
-     *  - Eventually set req.status and (optionally) req.errno_value.
-     *  - Invoke the provided completion callback exactly once.
-     */
-    virtual void submit(Request req, CompletionCallback on_complete) = 0;
-
-    /**
-     * @brief Poll for completions, if the backend needs it.
-     *
-     * CPU backend in this example does not need explicit polling;
-     * it calls completion callbacks directly from worker threads.
-     *
-     * A Vulkan backend might choose to poll fences here, for example.
-     */
-    virtual void poll() {}
-};
-
-/**
- * @brief A simple I/O queue that uses a Backend to execute requests.
- *
- * This is the public object a caller would interact with. It owns:
- *  - A queue of pending Request objects.
- *  - A Backend implementation that actually performs the work.
- */
-class Queue {
-public:
-    explicit Queue(std::shared_ptr<Backend> backend);
-    ~Queue();
-    /**
-     * @brief Enqueue a request to be submitted later.
-     *
-     * This function is thread-safe.
-     */
-    void enqueue(Request req);
-
-    /**
-     * @brief Submit all currently enqueued requests to the backend.
-     *
-     * This function is thread-safe. It does not block on completion;
-     * requests complete asynchronously.
-     */
-    void submit_all();
-
-    /**
-     * @brief Block until all submitted requests have completed.
-     *
-     * This is optional sugar for simple use cases. More complex
-     * callers can track completion via their own callbacks.
-     */
-    void wait_all();
-
-    /**
-     * @brief Number of requests currently in flight (not yet completed).
-     */
-    std::size_t in_flight() const;
-
-private:
-    struct Impl;
-    std::unique_ptr<Impl> impl_;
-};
-
-/**
- * @brief Factory for a CPU-only backend.
- *
- * This backend:
- *  - Runs pread() on worker threads.
- *  - Optionally applies a fake "decompression" transform
- *    (uppercase) if Compression::FakeUppercase is used.
- */
-std::shared_ptr<Backend> make_cpu_backend(std::size_t worker_count = 1);
-
-} // namespace ds
-
-#endif // DS_RUNTIME_HPP
->>>>>>> origin/main
