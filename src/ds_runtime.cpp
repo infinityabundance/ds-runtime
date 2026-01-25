@@ -295,6 +295,7 @@ public:
                                      __func__);
                 req.status      = RequestStatus::IoError;
                 req.errno_value = errno;
+                req.bytes_transferred = 0;
             } else {
                 // Successful read/write.
                 req.status      = RequestStatus::Ok;

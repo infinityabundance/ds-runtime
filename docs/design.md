@@ -99,7 +99,7 @@ pipeline structure.
 
 Planned progression:
 
-1. CPU-based GDeflate decompression
+1. CPU-based GDeflate decompression (currently stubbed with ENOTSUP)
 
 2. GPU-based GDeflate decompression via compute shaders
 

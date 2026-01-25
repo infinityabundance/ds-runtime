@@ -31,7 +31,8 @@ namespace ds {
 /// Real backends could extend this enum with actual codecs (e.g. GDeflate).
 enum class Compression {
     None,          ///< No compression; data is read as-is.
-    FakeUppercase  ///< Demo mode: uppercase ASCII bytes after reading.
+    FakeUppercase, ///< Demo mode: uppercase ASCII bytes after reading.
+    GDeflate       ///< Placeholder for GDeflate support (not yet implemented).
 };
 
 /// Status of a Request after execution by a Backend.

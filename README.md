@@ -5,7 +5,7 @@
     <img src="assets/ds-runtime.png" alt="ds-runtime logo" width="600"/>
   </a>
 </p>
-
+=======
 <p align="center">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License"/>
   <img src="https://img.shields.io/github/v/release/infinityabundance/ds-runtime" alt="Release"/>
@@ -16,7 +16,6 @@
 </p>
 
 <p align="center">
-  
 Experimental Linux-native DirectStorage-style runtime (CPU today, GPU tomorrow) with an early GPU/Vulkan backend, towards Wine/Proton integration. 
 
 
@@ -238,7 +237,7 @@ Current implementation:
 
 - Small internal thread pool
 
-- Demo “decompression” stage (uppercase transform)
+- Demo “decompression” stage (uppercase transform); GDeflate is stubbed
 
 Planned backends:
 
