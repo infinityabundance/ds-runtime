@@ -3,6 +3,12 @@
 <p align="center">
   <img src="assets/ds_runtime_logo.png" alt="ds-runtime logo" width="180">
 </p>
+![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)
+![Release](https://img.shields.io/github/v/release/infinityabundance/ds-runtime)
+![Platform](https://img.shields.io/badge/platform-Linux-blue)
+![Language](https://img.shields.io/badge/language-C%2B%2B20-orange)
+![Vulkan](https://img.shields.io/badge/Vulkan-1.3%2B-red)
+![Status](https://img.shields.io/badge/status-experimental-yellow)
 
 Experimental Linux-native DirectStorage-style runtime (CPU today, GPU tomorrow) GPU/Vulkan backend, towards Wine/Proton integration. 
 
