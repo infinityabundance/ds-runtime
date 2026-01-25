@@ -41,10 +41,6 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-set(CMAKE_C_STANDARD 11)
-set(CMAKE_C_STANDARD_REQUIRED ON)
-set(CMAKE_C_EXTENSIONS OFF)
-
 # ============================================================
 # Compiler warnings
 #
@@ -214,26 +210,6 @@ if (DS_BUILD_TESTS)
         endif()
         add_test(NAME ds_io_uring_tests COMMAND ds_io_uring_tests)
     endif()
-
-    add_executable(ds_gdeflate_stub_tests
-        tests/compression_gdeflate_stub_test.cpp
-    )
-    if (TARGET ds_runtime)
-        target_link_libraries(ds_gdeflate_stub_tests PRIVATE ds_runtime)
-    elseif (TARGET ds_runtime_static)
-        target_link_libraries(ds_gdeflate_stub_tests PRIVATE ds_runtime_static)
-    endif()
-    add_test(NAME ds_gdeflate_stub_tests COMMAND ds_gdeflate_stub_tests)
-
-    add_executable(ds_c_abi_stats_tests
-        tests/c_abi_stats_test.c
-    )
-    if (TARGET ds_runtime)
-        target_link_libraries(ds_c_abi_stats_tests PRIVATE ds_runtime)
-    elseif (TARGET ds_runtime_static)
-        target_link_libraries(ds_c_abi_stats_tests PRIVATE ds_runtime_static)
-    endif()
-    add_test(NAME ds_c_abi_stats_tests COMMAND ds_c_abi_stats_tests)
 endif()
 
 # ============================================================

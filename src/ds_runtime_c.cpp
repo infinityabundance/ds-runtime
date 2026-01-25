@@ -26,8 +26,6 @@ ds::Compression to_cpp_compression(ds_compression compression) {
     switch (compression) {
         case DS_COMPRESSION_FAKE_UPPERCASE:
             return ds::Compression::FakeUppercase;
-        case DS_COMPRESSION_GDEFLATE:
-            return ds::Compression::GDeflate;
         case DS_COMPRESSION_NONE:
         default:
             return ds::Compression::None;
@@ -80,7 +78,6 @@ ds::Request to_cpp_request(const ds_request& request) {
     cpp.src = request.src;
     cpp.gpu_buffer = request.gpu_buffer;
     cpp.gpu_offset = request.gpu_offset;
-    cpp.bytes_transferred = request.bytes_transferred;
     cpp.op = to_cpp_op(request.op);
     cpp.dst_memory = to_cpp_memory(request.dst_memory);
     cpp.src_memory = to_cpp_memory(request.src_memory);
@@ -94,7 +91,6 @@ ds::Request to_cpp_request(const ds_request& request) {
 void update_c_request(ds_request& c_req, const ds::Request& cpp_req) {
     c_req.status = to_c_status(cpp_req.status);
     c_req.errno_value = cpp_req.errno_value;
-    c_req.bytes_transferred = cpp_req.bytes_transferred;
 }
 
 // Track a C request alongside its C++ equivalent so we can
@@ -111,9 +107,6 @@ public:
     explicit CQueue(std::shared_ptr<ds::Backend> backend)
         : backend_(std::move(backend))
         , in_flight_(0)
-        , total_completed_(0)
-        , total_failed_(0)
-        , total_bytes_transferred_(0)
     {}
 
     // Enqueue a request. Ownership of the C struct remains with the caller.
@@ -123,7 +116,6 @@ public:
         }
         request->status = DS_REQUEST_PENDING;
         request->errno_value = 0;
-        request->bytes_transferred = 0;
         PendingRequest pending{to_cpp_request(*request), request};
         std::lock_guard<std::mutex> lock(mtx_);
         pending_.push_back(std::move(pending));
@@ -153,15 +145,6 @@ public:
                         callback(c_request, user_data);
                     }
 
-                    total_completed_.fetch_add(1, std::memory_order_relaxed);
-                    if (completed.status != ds::RequestStatus::Ok) {
-                        total_failed_.fetch_add(1, std::memory_order_relaxed);
-                    }
-                    total_bytes_transferred_.fetch_add(
-                        completed.bytes_transferred,
-                        std::memory_order_relaxed
-                    );
-
                     const auto remaining =
                         in_flight_.fetch_sub(1, std::memory_order_acq_rel) - 1;
                     if (remaining == 0) {
@@ -186,26 +169,11 @@ public:
         return in_flight_.load(std::memory_order_acquire);
     }
 
-    size_t total_completed() const {
-        return total_completed_.load(std::memory_order_acquire);
-    }
-
-    size_t total_failed() const {
-        return total_failed_.load(std::memory_order_acquire);
-    }
-
-    size_t total_bytes_transferred() const {
-        return total_bytes_transferred_.load(std::memory_order_acquire);
-    }
-
 private:
     std::shared_ptr<ds::Backend> backend_;
     mutable std::mutex mtx_;
     std::vector<PendingRequest> pending_;
     std::atomic<size_t> in_flight_;
-    std::atomic<size_t> total_completed_;
-    std::atomic<size_t> total_failed_;
-    std::atomic<size_t> total_bytes_transferred_;
     mutable std::mutex wait_mtx_;
     std::condition_variable wait_cv_;
 };
@@ -266,27 +234,6 @@ size_t ds_queue_in_flight(const ds_queue_t* queue) {
         return 0;
     }
     return queue->queue->in_flight();
-}
-
-size_t ds_queue_total_completed(const ds_queue_t* queue) {
-    if (!queue) {
-        return 0;
-    }
-    return queue->queue->total_completed();
-}
-
-size_t ds_queue_total_failed(const ds_queue_t* queue) {
-    if (!queue) {
-        return 0;
-    }
-    return queue->queue->total_failed();
-}
-
-size_t ds_queue_total_bytes_transferred(const ds_queue_t* queue) {
-    if (!queue) {
-        return 0;
-    }
-    return queue->queue->total_bytes_transferred();
 }
 
 #ifdef DS_RUNTIME_HAS_VULKAN

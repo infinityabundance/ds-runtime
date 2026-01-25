@@ -190,7 +190,6 @@ public:
                                      __func__);
                 req.status = RequestStatus::IoError;
                 req.errno_value = EBADF;
-                req.bytes_transferred = 0;
                 if (on_complete) {
                     on_complete(req);
                 }
@@ -208,7 +207,6 @@ public:
                                      __func__);
                 req.status = RequestStatus::IoError;
                 req.errno_value = EINVAL;
-                req.bytes_transferred = 0;
                 if (on_complete) {
                     on_complete(req);
                 }
@@ -226,7 +224,6 @@ public:
                                      __func__);
                 req.status = RequestStatus::IoError;
                 req.errno_value = EINVAL;
-                req.bytes_transferred = 0;
                 if (on_complete) {
                     on_complete(req);
                 }
@@ -244,7 +241,6 @@ public:
                                      __func__);
                 req.status = RequestStatus::IoError;
                 req.errno_value = EINVAL;
-                req.bytes_transferred = 0;
                 if (on_complete) {
                     on_complete(req);
                 }
@@ -263,43 +259,6 @@ public:
                                      __func__);
                 req.status = RequestStatus::IoError;
                 req.errno_value = EINVAL;
-                req.bytes_transferred = 0;
-                if (on_complete) {
-                    on_complete(req);
-                }
-                return;
-            }
-
-            if (req.op == RequestOp::Write && req.compression != Compression::None) {
-                report_request_error("cpu",
-                                     "submit",
-                                     "Compression is not supported for write requests",
-                                     req,
-                                     ENOTSUP,
-                                     __FILE__,
-                                     __LINE__,
-                                     __func__);
-                req.status = RequestStatus::IoError;
-                req.errno_value = ENOTSUP;
-                req.bytes_transferred = 0;
-                if (on_complete) {
-                    on_complete(req);
-                }
-                return;
-            }
-
-            if (req.op == RequestOp::Read && req.compression == Compression::GDeflate) {
-                report_request_error("cpu",
-                                     "submit",
-                                     "GDeflate is not implemented yet",
-                                     req,
-                                     ENOTSUP,
-                                     __FILE__,
-                                     __LINE__,
-                                     __func__);
-                req.status = RequestStatus::IoError;
-                req.errno_value = ENOTSUP;
-                req.bytes_transferred = 0;
                 if (on_complete) {
                     on_complete(req);
                 }
@@ -341,7 +300,6 @@ public:
                 // Successful read/write.
                 req.status      = RequestStatus::Ok;
                 req.errno_value = 0;
-                req.bytes_transferred = static_cast<std::size_t>(io_bytes);
 
                 if (req.op == RequestOp::Read) {
                     // For safety in string-based demos: if we read fewer bytes
@@ -518,25 +476,6 @@ struct Queue::Impl {
         return in_flight_.load(std::memory_order_acquire);
     }
 
-    std::size_t total_completed() const {
-        return total_completed_.load(std::memory_order_acquire);
-    }
-
-    std::size_t total_failed() const {
-        return total_failed_.load(std::memory_order_acquire);
-    }
-
-    std::size_t total_bytes_transferred() const {
-        return total_bytes_transferred_.load(std::memory_order_acquire);
-    }
-
-    std::vector<Request> take_completed() {
-        std::lock_guard<std::mutex> lock(mtx_);
-        std::vector<Request> out;
-        out.swap(completed_);
-        return out;
-    }
-
     // (Optional) You could expose access to completed_ later to let users
     // inspect statuses, aggregate stats, etc.
     std::shared_ptr<Backend> backend_;   ///< Backend used to execute submitted requests.
@@ -601,18 +540,6 @@ void Queue::wait_all() {
 std::size_t Queue::in_flight() const {
     // Snapshot of the current in-flight counter.
     return impl_->in_flight();
-}
-
-std::size_t Queue::total_completed() const {
-    return impl_->total_completed();
-}
-
-std::size_t Queue::total_failed() const {
-    return impl_->total_failed();
-}
-
-std::size_t Queue::total_bytes_transferred() const {
-    return impl_->total_bytes_transferred();
 }
 
 std::vector<Request> Queue::take_completed() {
