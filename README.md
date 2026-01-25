@@ -209,6 +209,8 @@ Responsible for:
 
 - Optional blocking via `wait_all()`
 
+- Retrieving completed requests via `take_completed()`
+
 The queue **does not perform I/O itself**.
 
 `ds::Backend`

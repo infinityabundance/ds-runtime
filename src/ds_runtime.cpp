@@ -527,4 +527,8 @@ std::size_t Queue::in_flight() const {
     return impl_->in_flight();
 }
 
+std::vector<Request> Queue::take_completed() {
+    return impl_->take_completed();
+}
+
 } // namespace ds
