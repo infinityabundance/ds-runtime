@@ -59,13 +59,14 @@ public:
     // Submit a host-memory-only request to the ring worker thread.
     void submit(Request req, CompletionCallback on_complete) override {
         if (init_failed_) {
-            report_error("io_uring",
-                         "submit",
-                         "Backend initialization failed",
-                         EINVAL,
-                         __FILE__,
-                         __LINE__,
-                         __func__);
+            report_request_error("io_uring",
+                                 "submit",
+                                 "Backend initialization failed",
+                                 req,
+                                 EINVAL,
+                                 __FILE__,
+                                 __LINE__,
+                                 __func__);
             req.status = RequestStatus::IoError;
             req.errno_value = EINVAL;
             if (on_complete) {
@@ -76,13 +77,14 @@ public:
 
         if ((req.op == RequestOp::Read && req.dst_memory == RequestMemory::Gpu) ||
             (req.op == RequestOp::Write && req.src_memory == RequestMemory::Gpu)) {
-            report_error("io_uring",
-                         "submit",
-                         "GPU memory requested on io_uring backend",
-                         EINVAL,
-                         __FILE__,
-                         __LINE__,
-                         __func__);
+            report_request_error("io_uring",
+                                 "submit",
+                                 "GPU memory requested on io_uring backend",
+                                 req,
+                                 EINVAL,
+                                 __FILE__,
+                                 __LINE__,
+                                 __func__);
             req.status = RequestStatus::IoError;
             req.errno_value = EINVAL;
             if (on_complete) {
@@ -126,13 +128,14 @@ private:
 
                 io_uring_sqe* sqe = io_uring_get_sqe(&ring_);
                 if (!sqe) {
-                    report_error("io_uring",
-                                 "io_uring_get_sqe",
-                                 "Submission queue is full",
-                                 EBUSY,
-                                 __FILE__,
-                                 __LINE__,
-                                 __func__);
+                    report_request_error("io_uring",
+                                         "io_uring_get_sqe",
+                                         "Submission queue is full",
+                                         op->req,
+                                         EBUSY,
+                                         __FILE__,
+                                         __LINE__,
+                                         __func__);
                     op->req.status = RequestStatus::IoError;
                     op->req.errno_value = EBUSY;
                     if (op->callback) {

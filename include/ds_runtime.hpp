@@ -124,6 +124,13 @@ struct ErrorContext {
     int         line = 0;   ///< Line number reporting the error.
     int         errno_value = 0; ///< errno or backend-specific error code.
     std::chrono::system_clock::time_point timestamp;
+    bool        has_request = false; ///< True when request-specific fields are populated.
+    int         fd = -1;             ///< File descriptor involved in the request.
+    std::uint64_t offset = 0;        ///< Request byte offset.
+    std::size_t  size = 0;           ///< Request size in bytes.
+    RequestOp    op = RequestOp::Read; ///< Request operation.
+    RequestMemory src_memory = RequestMemory::Host; ///< Source memory type.
+    RequestMemory dst_memory = RequestMemory::Host; ///< Destination memory type.
 };
 
 /// Error callback type for diagnostics.
@@ -140,6 +147,16 @@ void report_error(const std::string& subsystem,
                   const char* file,
                   int line,
                   const char* function);
+
+/// Report an error with request context attached.
+void report_request_error(const std::string& subsystem,
+                          const std::string& operation,
+                          const std::string& detail,
+                          const Request& request,
+                          int errno_value,
+                          const char* file,
+                          int line,
+                          const char* function);
 
 // -----------------------------------------------------------------------------
 // Queue

@@ -7,6 +7,7 @@
 #include <iostream>
 #include <mutex>
 #include <sstream>
+#include <string>
 
 namespace ds {
 
@@ -34,6 +35,19 @@ void default_reporter(const ErrorContext& ctx) {
               << " operation=" << ctx.operation
               << " errno=" << ctx.errno_value
               << " detail=\"" << ctx.detail << "\""
+              << " request=" << (ctx.has_request ? "yes" : "no")
+              << (ctx.has_request ? " fd=" : "")
+              << (ctx.has_request ? std::to_string(ctx.fd) : "")
+              << (ctx.has_request ? " offset=" : "")
+              << (ctx.has_request ? std::to_string(ctx.offset) : "")
+              << (ctx.has_request ? " size=" : "")
+              << (ctx.has_request ? std::to_string(ctx.size) : "")
+              << (ctx.has_request ? " op=" : "")
+              << (ctx.has_request ? (ctx.op == RequestOp::Write ? "write" : "read") : "")
+              << (ctx.has_request ? " src_mem=" : "")
+              << (ctx.has_request ? (ctx.src_memory == RequestMemory::Gpu ? "gpu" : "host") : "")
+              << (ctx.has_request ? " dst_mem=" : "")
+              << (ctx.has_request ? (ctx.dst_memory == RequestMemory::Gpu ? "gpu" : "host") : "")
               << " at " << ctx.file << ":" << ctx.line
               << " (" << ctx.function << ")"
               << std::endl;
@@ -62,6 +76,44 @@ void report_error(const std::string& subsystem,
     ctx.line = line;
     ctx.errno_value = errno_value;
     ctx.timestamp = std::chrono::system_clock::now();
+
+    ErrorCallback callback;
+    {
+        std::lock_guard<std::mutex> lock(g_error_mutex);
+        callback = g_error_callback;
+    }
+
+    if (callback) {
+        callback(ctx);
+    } else {
+        default_reporter(ctx);
+    }
+}
+
+void report_request_error(const std::string& subsystem,
+                          const std::string& operation,
+                          const std::string& detail,
+                          const Request& request,
+                          int errno_value,
+                          const char* file,
+                          int line,
+                          const char* function) {
+    ErrorContext ctx{};
+    ctx.subsystem = subsystem;
+    ctx.operation = operation;
+    ctx.detail = detail;
+    ctx.file = file ? file : "";
+    ctx.function = function ? function : "";
+    ctx.line = line;
+    ctx.errno_value = errno_value;
+    ctx.timestamp = std::chrono::system_clock::now();
+    ctx.has_request = true;
+    ctx.fd = request.fd;
+    ctx.offset = request.offset;
+    ctx.size = request.size;
+    ctx.op = request.op;
+    ctx.src_memory = request.src_memory;
+    ctx.dst_memory = request.dst_memory;
 
     ErrorCallback callback;
     {

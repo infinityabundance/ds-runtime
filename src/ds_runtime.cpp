@@ -180,13 +180,14 @@ public:
         pool_.submit([req, on_complete]() mutable {
             // Validate the request before attempting any I/O.
             if (req.fd < 0) {
-                report_error("cpu",
-                             "submit",
-                             "Invalid file descriptor",
-                             EBADF,
-                             __FILE__,
-                             __LINE__,
-                             __func__);
+                report_request_error("cpu",
+                                     "submit",
+                                     "Invalid file descriptor",
+                                     req,
+                                     EBADF,
+                                     __FILE__,
+                                     __LINE__,
+                                     __func__);
                 req.status = RequestStatus::IoError;
                 req.errno_value = EBADF;
                 if (on_complete) {
@@ -196,13 +197,14 @@ public:
             }
 
             if (req.size == 0) {
-                report_error("cpu",
-                             "submit",
-                             "Zero-length request is not allowed",
-                             EINVAL,
-                             __FILE__,
-                             __LINE__,
-                             __func__);
+                report_request_error("cpu",
+                                     "submit",
+                                     "Zero-length request is not allowed",
+                                     req,
+                                     EINVAL,
+                                     __FILE__,
+                                     __LINE__,
+                                     __func__);
                 req.status = RequestStatus::IoError;
                 req.errno_value = EINVAL;
                 if (on_complete) {
@@ -212,13 +214,14 @@ public:
             }
 
             if (req.op == RequestOp::Read && req.dst == nullptr) {
-                report_error("cpu",
-                             "submit",
-                             "Read request missing destination buffer",
-                             EINVAL,
-                             __FILE__,
-                             __LINE__,
-                             __func__);
+                report_request_error("cpu",
+                                     "submit",
+                                     "Read request missing destination buffer",
+                                     req,
+                                     EINVAL,
+                                     __FILE__,
+                                     __LINE__,
+                                     __func__);
                 req.status = RequestStatus::IoError;
                 req.errno_value = EINVAL;
                 if (on_complete) {
@@ -228,13 +231,14 @@ public:
             }
 
             if (req.op == RequestOp::Write && req.src == nullptr) {
-                report_error("cpu",
-                             "submit",
-                             "Write request missing source buffer",
-                             EINVAL,
-                             __FILE__,
-                             __LINE__,
-                             __func__);
+                report_request_error("cpu",
+                                     "submit",
+                                     "Write request missing source buffer",
+                                     req,
+                                     EINVAL,
+                                     __FILE__,
+                                     __LINE__,
+                                     __func__);
                 req.status = RequestStatus::IoError;
                 req.errno_value = EINVAL;
                 if (on_complete) {
@@ -245,13 +249,14 @@ public:
 
             if ((req.op == RequestOp::Read && req.dst_memory == RequestMemory::Gpu) ||
                 (req.op == RequestOp::Write && req.src_memory == RequestMemory::Gpu)) {
-                report_error("cpu",
-                             "submit",
-                             "GPU memory requested on CPU backend",
-                             EINVAL,
-                             __FILE__,
-                             __LINE__,
-                             __func__);
+                report_request_error("cpu",
+                                     "submit",
+                                     "GPU memory requested on CPU backend",
+                                     req,
+                                     EINVAL,
+                                     __FILE__,
+                                     __LINE__,
+                                     __func__);
                 req.status = RequestStatus::IoError;
                 req.errno_value = EINVAL;
                 if (on_complete) {
@@ -280,13 +285,14 @@ public:
 
             if (io_bytes < 0) {
                 // I/O error: capture errno and mark the request as failed.
-                report_error("cpu",
-                             req.op == RequestOp::Write ? "pwrite" : "pread",
-                             "POSIX I/O failed",
-                             errno,
-                             __FILE__,
-                             __LINE__,
-                             __func__);
+                report_request_error("cpu",
+                                     req.op == RequestOp::Write ? "pwrite" : "pread",
+                                     "POSIX I/O failed",
+                                     req,
+                                     errno,
+                                     __FILE__,
+                                     __LINE__,
+                                     __func__);
                 req.status      = RequestStatus::IoError;
                 req.errno_value = errno;
             } else {

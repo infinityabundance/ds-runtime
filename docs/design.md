@@ -120,7 +120,9 @@ Compression is treated as a backend concern, not a queue concern.
 The runtime exposes a process-wide error callback (`ds::set_error_callback`)
 that receives rich context (subsystem, operation, source location, timestamp)
 to aid debugging. Backends call `ds::report_error` whenever they encounter
-errors during submission, I/O, or GPU transfers.
+errors during submission, I/O, or GPU transfers. For request-specific failures,
+backends use `ds::report_request_error` to attach fd/offset/size and memory
+target details.
 
 ### Integration with Wine / Proton
 

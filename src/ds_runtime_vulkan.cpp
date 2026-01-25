@@ -124,19 +124,18 @@ public:
 
     // Submit work asynchronously. The Request is copied into the worker
     // lambda to decouple lifetime from the caller.
-    // Submit work asynchronously. The Request is copied into the worker
-    // lambda to decouple lifetime from the caller.
     void submit(Request req, CompletionCallback on_complete) override {
         pool_.submit([this, req, on_complete]() mutable {
             // Validate the request before performing any GPU operations.
             if (req.fd < 0) {
-                report_error("vulkan",
-                             "submit",
-                             "Invalid file descriptor",
-                             EBADF,
-                             __FILE__,
-                             __LINE__,
-                             __func__);
+                report_request_error("vulkan",
+                                     "submit",
+                                     "Invalid file descriptor",
+                                     req,
+                                     EBADF,
+                                     __FILE__,
+                                     __LINE__,
+                                     __func__);
                 req.status = RequestStatus::IoError;
                 req.errno_value = EBADF;
                 if (on_complete) {
@@ -146,13 +145,14 @@ public:
             }
 
             if (req.size == 0) {
-                report_error("vulkan",
-                             "submit",
-                             "Zero-length request is not allowed",
-                             EINVAL,
-                             __FILE__,
-                             __LINE__,
-                             __func__);
+                report_request_error("vulkan",
+                                     "submit",
+                                     "Zero-length request is not allowed",
+                                     req,
+                                     EINVAL,
+                                     __FILE__,
+                                     __LINE__,
+                                     __func__);
                 req.status = RequestStatus::IoError;
                 req.errno_value = EINVAL;
                 if (on_complete) {
@@ -163,13 +163,14 @@ public:
 
             if (req.op == RequestOp::Read && req.dst_memory == RequestMemory::Host &&
                 req.dst == nullptr) {
-                report_error("vulkan",
-                             "submit",
-                             "Read request missing destination buffer",
-                             EINVAL,
-                             __FILE__,
-                             __LINE__,
-                             __func__);
+                report_request_error("vulkan",
+                                     "submit",
+                                     "Read request missing destination buffer",
+                                     req,
+                                     EINVAL,
+                                     __FILE__,
+                                     __LINE__,
+                                     __func__);
                 req.status = RequestStatus::IoError;
                 req.errno_value = EINVAL;
                 if (on_complete) {
@@ -180,13 +181,14 @@ public:
 
             if (req.op == RequestOp::Write && req.src_memory == RequestMemory::Host &&
                 req.src == nullptr) {
-                report_error("vulkan",
-                             "submit",
-                             "Write request missing source buffer",
-                             EINVAL,
-                             __FILE__,
-                             __LINE__,
-                             __func__);
+                report_request_error("vulkan",
+                                     "submit",
+                                     "Write request missing source buffer",
+                                     req,
+                                     EINVAL,
+                                     __FILE__,
+                                     __LINE__,
+                                     __func__);
                 req.status = RequestStatus::IoError;
                 req.errno_value = EINVAL;
                 if (on_complete) {
@@ -338,13 +340,14 @@ private:
     // Route the request to the appropriate data path based on memory targets.
     void handle_request(Request& req) {
         if (device_ == VK_NULL_HANDLE || physical_device_ == VK_NULL_HANDLE) {
-            report_error("vulkan",
-                         "handle_request",
-                         "Vulkan device not initialized",
-                         EINVAL,
-                         __FILE__,
-                         __LINE__,
-                         __func__);
+            report_request_error("vulkan",
+                                 "handle_request",
+                                 "Vulkan device not initialized",
+                                 req,
+                                 EINVAL,
+                                 __FILE__,
+                                 __LINE__,
+                                 __func__);
             req.status = RequestStatus::IoError;
             req.errno_value = EINVAL;
             return;
@@ -383,13 +386,14 @@ private:
         }
 
         if (io_bytes < 0) {
-            report_error("vulkan",
-                         req.op == RequestOp::Write ? "pwrite" : "pread",
-                         "Host I/O failed",
-                         errno,
-                         __FILE__,
-                         __LINE__,
-                         __func__);
+            report_request_error("vulkan",
+                                 req.op == RequestOp::Write ? "pwrite" : "pread",
+                                 "Host I/O failed",
+                                 req,
+                                 errno,
+                                 __FILE__,
+                                 __LINE__,
+                                 __func__);
             req.status = RequestStatus::IoError;
             req.errno_value = errno;
         } else {
@@ -402,13 +406,14 @@ private:
     void handle_file_to_gpu(Request& req) {
         VkBuffer gpu_buffer = reinterpret_cast<VkBuffer>(req.gpu_buffer);
         if (gpu_buffer == VK_NULL_HANDLE) {
-            report_error("vulkan",
-                         "file_to_gpu",
-                         "GPU buffer handle is null",
-                         EINVAL,
-                         __FILE__,
-                         __LINE__,
-                         __func__);
+            report_request_error("vulkan",
+                                 "file_to_gpu",
+                                 "GPU buffer handle is null",
+                                 req,
+                                 EINVAL,
+                                 __FILE__,
+                                 __LINE__,
+                                 __func__);
             req.status = RequestStatus::IoError;
             req.errno_value = EINVAL;
             return;
@@ -418,13 +423,14 @@ private:
         VkDeviceMemory staging_memory = VK_NULL_HANDLE;
         if (!create_staging_buffer(req.size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT,
                                    staging_buffer, staging_memory)) {
-            report_error("vulkan",
-                         "create_staging_buffer",
-                         "Failed to allocate staging buffer",
-                         ENOMEM,
-                         __FILE__,
-                         __LINE__,
-                         __func__);
+            report_request_error("vulkan",
+                                 "create_staging_buffer",
+                                 "Failed to allocate staging buffer",
+                                 req,
+                                 ENOMEM,
+                                 __FILE__,
+                                 __LINE__,
+                                 __func__);
             req.status = RequestStatus::IoError;
             req.errno_value = ENOMEM;
             return;
@@ -433,13 +439,14 @@ private:
         // Stage file contents in a host-visible buffer.
         void* mapped = nullptr;
         if (vkMapMemory(device_, staging_memory, 0, req.size, 0, &mapped) != VK_SUCCESS) {
-            report_error("vulkan",
-                         "vkMapMemory",
-                         "Failed to map staging buffer memory",
-                         EIO,
-                         __FILE__,
-                         __LINE__,
-                         __func__);
+            report_request_error("vulkan",
+                                 "vkMapMemory",
+                                 "Failed to map staging buffer memory",
+                                 req,
+                                 EIO,
+                                 __FILE__,
+                                 __LINE__,
+                                 __func__);
             destroy_buffer(staging_buffer, staging_memory);
             req.status = RequestStatus::IoError;
             req.errno_value = EIO;
@@ -454,13 +461,14 @@ private:
         vkUnmapMemory(device_, staging_memory);
 
         if (rd < 0) {
-            report_error("vulkan",
-                         "pread",
-                         "Failed to read file into staging buffer",
-                         errno,
-                         __FILE__,
-                         __LINE__,
-                         __func__);
+            report_request_error("vulkan",
+                                 "pread",
+                                 "Failed to read file into staging buffer",
+                                 req,
+                                 errno,
+                                 __FILE__,
+                                 __LINE__,
+                                 __func__);
             destroy_buffer(staging_buffer, staging_memory);
             req.status = RequestStatus::IoError;
             req.errno_value = errno;
@@ -469,13 +477,14 @@ private:
 
         // Copy staged contents into the GPU buffer.
         if (!submit_copy(staging_buffer, gpu_buffer, req.size, 0, req.gpu_offset)) {
-            report_error("vulkan",
-                         "vkCmdCopyBuffer",
-                         "Failed to copy staging buffer to GPU buffer",
-                         EIO,
-                         __FILE__,
-                         __LINE__,
-                         __func__);
+            report_request_error("vulkan",
+                                 "vkCmdCopyBuffer",
+                                 "Failed to copy staging buffer to GPU buffer",
+                                 req,
+                                 EIO,
+                                 __FILE__,
+                                 __LINE__,
+                                 __func__);
             destroy_buffer(staging_buffer, staging_memory);
             req.status = RequestStatus::IoError;
             req.errno_value = EIO;
@@ -491,13 +500,14 @@ private:
     void handle_gpu_to_file(Request& req) {
         VkBuffer gpu_buffer = reinterpret_cast<VkBuffer>(req.gpu_buffer);
         if (gpu_buffer == VK_NULL_HANDLE) {
-            report_error("vulkan",
-                         "gpu_to_file",
-                         "GPU buffer handle is null",
-                         EINVAL,
-                         __FILE__,
-                         __LINE__,
-                         __func__);
+            report_request_error("vulkan",
+                                 "gpu_to_file",
+                                 "GPU buffer handle is null",
+                                 req,
+                                 EINVAL,
+                                 __FILE__,
+                                 __LINE__,
+                                 __func__);
             req.status = RequestStatus::IoError;
             req.errno_value = EINVAL;
             return;
@@ -507,13 +517,14 @@ private:
         VkDeviceMemory staging_memory = VK_NULL_HANDLE;
         if (!create_staging_buffer(req.size, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
                                    staging_buffer, staging_memory)) {
-            report_error("vulkan",
-                         "create_staging_buffer",
-                         "Failed to allocate staging buffer",
-                         ENOMEM,
-                         __FILE__,
-                         __LINE__,
-                         __func__);
+            report_request_error("vulkan",
+                                 "create_staging_buffer",
+                                 "Failed to allocate staging buffer",
+                                 req,
+                                 ENOMEM,
+                                 __FILE__,
+                                 __LINE__,
+                                 __func__);
             req.status = RequestStatus::IoError;
             req.errno_value = ENOMEM;
             return;
@@ -521,13 +532,14 @@ private:
 
         // Copy GPU buffer contents into staging.
         if (!submit_copy(gpu_buffer, staging_buffer, req.size, req.gpu_offset, 0)) {
-            report_error("vulkan",
-                         "vkCmdCopyBuffer",
-                         "Failed to copy GPU buffer to staging buffer",
-                         EIO,
-                         __FILE__,
-                         __LINE__,
-                         __func__);
+            report_request_error("vulkan",
+                                 "vkCmdCopyBuffer",
+                                 "Failed to copy GPU buffer to staging buffer",
+                                 req,
+                                 EIO,
+                                 __FILE__,
+                                 __LINE__,
+                                 __func__);
             destroy_buffer(staging_buffer, staging_memory);
             req.status = RequestStatus::IoError;
             req.errno_value = EIO;
@@ -537,13 +549,14 @@ private:
         // Write staged contents to disk.
         void* mapped = nullptr;
         if (vkMapMemory(device_, staging_memory, 0, req.size, 0, &mapped) != VK_SUCCESS) {
-            report_error("vulkan",
-                         "vkMapMemory",
-                         "Failed to map staging buffer memory",
-                         EIO,
-                         __FILE__,
-                         __LINE__,
-                         __func__);
+            report_request_error("vulkan",
+                                 "vkMapMemory",
+                                 "Failed to map staging buffer memory",
+                                 req,
+                                 EIO,
+                                 __FILE__,
+                                 __LINE__,
+                                 __func__);
             destroy_buffer(staging_buffer, staging_memory);
             req.status = RequestStatus::IoError;
             req.errno_value = EIO;
@@ -560,13 +573,14 @@ private:
         destroy_buffer(staging_buffer, staging_memory);
 
         if (wr < 0) {
-            report_error("vulkan",
-                         "pwrite",
-                         "Failed to write staging buffer to file",
-                         errno,
-                         __FILE__,
-                         __LINE__,
-                         __func__);
+            report_request_error("vulkan",
+                                 "pwrite",
+                                 "Failed to write staging buffer to file",
+                                 req,
+                                 errno,
+                                 __FILE__,
+                                 __LINE__,
+                                 __func__);
             req.status = RequestStatus::IoError;
             req.errno_value = errno;
             return;
