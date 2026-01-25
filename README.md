@@ -489,11 +489,11 @@ The goal is to explore what a **native Linux DirectStorage-style runtime** could
 
 ## 🛣️ Roadmap (rough)
 
- ◻️ Vulkan backend (compute copy → compute decompression)
+ ✅ Vulkan backend (file ↔ GPU buffer transfers; compute copy/decompression planned)
 
  ◻️ Real compression format (CPU GDeflate first)
 
- ◻️ `io_uring` backend
+ ✅ `io_uring` backend (host memory)
 
  ◻️ Wine / Proton integration experiments
 
