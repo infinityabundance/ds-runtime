@@ -69,7 +69,6 @@ public:
                                  __func__);
             req.status = RequestStatus::IoError;
             req.errno_value = EINVAL;
-            req.bytes_transferred = 0;
             if (on_complete) {
                 on_complete(req);
             }
@@ -88,43 +87,6 @@ public:
                                  __func__);
             req.status = RequestStatus::IoError;
             req.errno_value = EINVAL;
-            req.bytes_transferred = 0;
-            if (on_complete) {
-                on_complete(req);
-            }
-            return;
-        }
-
-        if (req.op == RequestOp::Write && req.compression != Compression::None) {
-            report_request_error("io_uring",
-                                 "submit",
-                                 "Compression is not supported for write requests",
-                                 req,
-                                 ENOTSUP,
-                                 __FILE__,
-                                 __LINE__,
-                                 __func__);
-            req.status = RequestStatus::IoError;
-            req.errno_value = ENOTSUP;
-            req.bytes_transferred = 0;
-            if (on_complete) {
-                on_complete(req);
-            }
-            return;
-        }
-
-        if (req.op == RequestOp::Read && req.compression == Compression::GDeflate) {
-            report_request_error("io_uring",
-                                 "submit",
-                                 "GDeflate is not implemented yet",
-                                 req,
-                                 ENOTSUP,
-                                 __FILE__,
-                                 __LINE__,
-                                 __func__);
-            req.status = RequestStatus::IoError;
-            req.errno_value = ENOTSUP;
-            req.bytes_transferred = 0;
             if (on_complete) {
                 on_complete(req);
             }
@@ -176,7 +138,6 @@ private:
                                          __func__);
                     op->req.status = RequestStatus::IoError;
                     op->req.errno_value = EBUSY;
-                    op->req.bytes_transferred = 0;
                     if (op->callback) {
                         op->callback(op->req);
                     }
@@ -234,11 +195,9 @@ private:
                     if (cqe->res < 0) {
                         op->req.status = RequestStatus::IoError;
                         op->req.errno_value = -cqe->res;
-                        op->req.bytes_transferred = 0;
                     } else {
                         op->req.status = RequestStatus::Ok;
                         op->req.errno_value = 0;
-                        op->req.bytes_transferred = static_cast<std::size_t>(cqe->res);
                     }
                     if (op->callback) {
                         op->callback(op->req);

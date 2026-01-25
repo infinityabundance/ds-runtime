@@ -138,7 +138,6 @@ public:
                                      __func__);
                 req.status = RequestStatus::IoError;
                 req.errno_value = EBADF;
-                req.bytes_transferred = 0;
                 if (on_complete) {
                     on_complete(req);
                 }
@@ -156,7 +155,6 @@ public:
                                      __func__);
                 req.status = RequestStatus::IoError;
                 req.errno_value = EINVAL;
-                req.bytes_transferred = 0;
                 if (on_complete) {
                     on_complete(req);
                 }
@@ -175,7 +173,6 @@ public:
                                      __func__);
                 req.status = RequestStatus::IoError;
                 req.errno_value = EINVAL;
-                req.bytes_transferred = 0;
                 if (on_complete) {
                     on_complete(req);
                 }
@@ -194,43 +191,6 @@ public:
                                      __func__);
                 req.status = RequestStatus::IoError;
                 req.errno_value = EINVAL;
-                req.bytes_transferred = 0;
-                if (on_complete) {
-                    on_complete(req);
-                }
-                return;
-            }
-
-            if (req.op == RequestOp::Write && req.compression != Compression::None) {
-                report_request_error("vulkan",
-                                     "submit",
-                                     "Compression is not supported for write requests",
-                                     req,
-                                     ENOTSUP,
-                                     __FILE__,
-                                     __LINE__,
-                                     __func__);
-                req.status = RequestStatus::IoError;
-                req.errno_value = ENOTSUP;
-                req.bytes_transferred = 0;
-                if (on_complete) {
-                    on_complete(req);
-                }
-                return;
-            }
-
-            if (req.op == RequestOp::Read && req.compression == Compression::GDeflate) {
-                report_request_error("vulkan",
-                                     "submit",
-                                     "GDeflate is not implemented yet",
-                                     req,
-                                     ENOTSUP,
-                                     __FILE__,
-                                     __LINE__,
-                                     __func__);
-                req.status = RequestStatus::IoError;
-                req.errno_value = ENOTSUP;
-                req.bytes_transferred = 0;
                 if (on_complete) {
                     on_complete(req);
                 }
@@ -390,7 +350,6 @@ private:
                                  __func__);
             req.status = RequestStatus::IoError;
             req.errno_value = EINVAL;
-            req.bytes_transferred = 0;
             return;
         }
 
@@ -437,11 +396,9 @@ private:
                                  __func__);
             req.status = RequestStatus::IoError;
             req.errno_value = errno;
-            req.bytes_transferred = 0;
         } else {
             req.status = RequestStatus::Ok;
             req.errno_value = 0;
-            req.bytes_transferred = static_cast<std::size_t>(io_bytes);
         }
     }
 
@@ -459,7 +416,6 @@ private:
                                  __func__);
             req.status = RequestStatus::IoError;
             req.errno_value = EINVAL;
-            req.bytes_transferred = 0;
             return;
         }
 
@@ -477,7 +433,6 @@ private:
                                  __func__);
             req.status = RequestStatus::IoError;
             req.errno_value = ENOMEM;
-            req.bytes_transferred = 0;
             return;
         }
 
@@ -495,7 +450,6 @@ private:
             destroy_buffer(staging_buffer, staging_memory);
             req.status = RequestStatus::IoError;
             req.errno_value = EIO;
-            req.bytes_transferred = 0;
             return;
         }
         const ssize_t rd = ::pread(
@@ -518,7 +472,6 @@ private:
             destroy_buffer(staging_buffer, staging_memory);
             req.status = RequestStatus::IoError;
             req.errno_value = errno;
-            req.bytes_transferred = 0;
             return;
         }
 
@@ -535,14 +488,12 @@ private:
             destroy_buffer(staging_buffer, staging_memory);
             req.status = RequestStatus::IoError;
             req.errno_value = EIO;
-            req.bytes_transferred = 0;
             return;
         }
 
         destroy_buffer(staging_buffer, staging_memory);
         req.status = RequestStatus::Ok;
         req.errno_value = 0;
-        req.bytes_transferred = static_cast<std::size_t>(rd);
     }
 
     // Copy GPU buffer contents into a staging buffer, then write to disk.
@@ -559,7 +510,6 @@ private:
                                  __func__);
             req.status = RequestStatus::IoError;
             req.errno_value = EINVAL;
-            req.bytes_transferred = 0;
             return;
         }
 
@@ -577,7 +527,6 @@ private:
                                  __func__);
             req.status = RequestStatus::IoError;
             req.errno_value = ENOMEM;
-            req.bytes_transferred = 0;
             return;
         }
 
@@ -594,7 +543,6 @@ private:
             destroy_buffer(staging_buffer, staging_memory);
             req.status = RequestStatus::IoError;
             req.errno_value = EIO;
-            req.bytes_transferred = 0;
             return;
         }
 
@@ -612,7 +560,6 @@ private:
             destroy_buffer(staging_buffer, staging_memory);
             req.status = RequestStatus::IoError;
             req.errno_value = EIO;
-            req.bytes_transferred = 0;
             return;
         }
         const ssize_t wr = ::pwrite(
@@ -636,13 +583,11 @@ private:
                                  __func__);
             req.status = RequestStatus::IoError;
             req.errno_value = errno;
-            req.bytes_transferred = 0;
             return;
         }
 
         req.status = RequestStatus::Ok;
         req.errno_value = 0;
-        req.bytes_transferred = static_cast<std::size_t>(wr);
     }
 
     // Allocate a host-visible staging buffer for file transfers.

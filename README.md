@@ -1,9 +1,21 @@
 # ds-runtime
 
 <p align="center">
-  <img src="assets/ds_runtime_logo.png" alt="ds-runtime logo" width="180">
+  <a href="https://github.com/infinityabundance/ds-runtime">
+    <img src="assets/ds-runtime.png" alt="ds-runtime logo" width="600"/>
+  </a>
+</p>
+=======
+<p align="center">
+  <img src="https://img.shields.io/badge/license-Apache--2.0-blue.svg" alt="License"/>
+  <img src="https://img.shields.io/github/v/release/infinityabundance/ds-runtime" alt="Release"/>
+  <img src="https://img.shields.io/badge/platform-Linux-blue" alt="Platform"/>
+  <img src="https://img.shields.io/badge/language-C%2B%2B20-orange" alt="Language"/>
+  <img src="https://img.shields.io/badge/Vulkan-1.3%2B-red" alt="Vulkan"/>
+  <img src="https://img.shields.io/badge/status-experimental-yellow" alt="Status"/>
 </p>
 
+<p align="center">
 Experimental Linux-native DirectStorage-style runtime (CPU today, GPU tomorrow) with an early GPU/Vulkan backend, towards Wine/Proton integration. 
 
 
@@ -66,6 +78,70 @@ This is not:
 
 ---
 
+## 🎯 Why this matters
+
+Modern games increasingly rely on DirectStorage-style I/O to stream large assets
+(textures, meshes, shaders) efficiently from disk to memory and GPU. On Windows,
+DirectStorage provides a standardized API that reduces CPU overhead, minimizes
+copying, and enables better asset streaming at scale.
+
+On Linux, no equivalent native API exists today.
+
+As a result, Proton/Wine-based games that depend on DirectStorage semantics must
+either:
+- Fall back to legacy, CPU-heavy I/O paths, or
+- Emulate Windows behavior in user space with limited visibility into Linux-native
+  async I/O, memory management, and GPU synchronization.
+
+This creates a structural gap.
+
+### The problem space
+
+Without a native Linux-side abstraction:
+- Asset streaming is fragmented across engines and ad-hoc thread pools
+- CPU cores are wasted on I/O and decompression work that could be pipelined or
+  offloaded
+- GPU upload paths are often bolted on after the fact rather than designed into
+  the I/O model
+- Proton/Wine must translate Windows semantics without a clear Linux analogue
+
+DirectStorage is not just “faster file I/O” — it is an architectural contract
+between the game, the OS, and the GPU.
+
+### What a native Linux approach enables
+
+A Linux-native DirectStorage-style runtime enables:
+- A **clear, explicit async I/O model** built on Linux primitives
+  (e.g. thread pools today, io_uring tomorrow)
+- **Batching and queue-based submission** that matches how modern engines
+  structure asset streaming
+- A **first-class path from disk → CPU → GPU**, rather than implicit or
+  engine-specific glue
+- Cleaner **integration points for Wine/Proton**, avoiding opaque shims or
+  duplicated logic
+- An evolution path toward **GPU-assisted decompression and copies** via Vulkan
+
+This is not about copying Windows APIs verbatim. It is about providing a native
+Linux abstraction that maps cleanly onto modern storage, memory, and GPU systems.
+
+### Why ds-runtime exists
+
+`ds-runtime` explores what such a runtime could look like on Linux:
+
+- A small, explicit request/queue model inspired by DirectStorage semantics
+- Pluggable backends (CPU today, Vulkan/GPU tomorrow)
+- A stable C ABI suitable for integration into Wine/Proton or engines
+- Clear ownership, lifetime, and synchronization rules
+- Documentation that treats integration as a first-class concern
+
+Even partial adoption of these ideas can reduce duplication, clarify I/O paths,
+and make asset streaming behavior more predictable on Linux.
+
+The long-term goal is not to replace engines or drivers, but to provide a shared,
+understandable foundation for high-performance game I/O on Linux.
+
+---
+
 ## 🧱 High-level architecture
 ```
 ┌─────────────┐
@@ -109,8 +185,6 @@ Describes what to load:
 
 - Compression mode
 
-- Bytes transferred (filled by backend on completion)
-
 - Optional GPU buffer handle + offset when using the Vulkan backend
 
 - Completion status / error
@@ -136,8 +210,6 @@ Responsible for:
 - Optional blocking via `wait_all()`
 
 - Retrieving completed requests via `take_completed()`
-
-- Aggregated stats via `total_completed()`, `total_failed()`, `total_bytes_transferred()`
 
 The queue **does not perform I/O itself**.
 
