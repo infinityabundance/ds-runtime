@@ -26,8 +26,6 @@ ds::Compression to_cpp_compression(ds_compression compression) {
     switch (compression) {
         case DS_COMPRESSION_FAKE_UPPERCASE:
             return ds::Compression::FakeUppercase;
-        case DS_COMPRESSION_GDEFLATE:
-            return ds::Compression::GDeflate;
         case DS_COMPRESSION_NONE:
         default:
             return ds::Compression::None;
@@ -80,7 +78,6 @@ ds::Request to_cpp_request(const ds_request& request) {
     cpp.src = request.src;
     cpp.gpu_buffer = request.gpu_buffer;
     cpp.gpu_offset = request.gpu_offset;
-    cpp.bytes_transferred = request.bytes_transferred;
     cpp.op = to_cpp_op(request.op);
     cpp.dst_memory = to_cpp_memory(request.dst_memory);
     cpp.src_memory = to_cpp_memory(request.src_memory);
@@ -94,7 +91,6 @@ ds::Request to_cpp_request(const ds_request& request) {
 void update_c_request(ds_request& c_req, const ds::Request& cpp_req) {
     c_req.status = to_c_status(cpp_req.status);
     c_req.errno_value = cpp_req.errno_value;
-    c_req.bytes_transferred = cpp_req.bytes_transferred;
 }
 
 // Track a C request alongside its C++ equivalent so we can
@@ -120,7 +116,6 @@ public:
         }
         request->status = DS_REQUEST_PENDING;
         request->errno_value = 0;
-        request->bytes_transferred = 0;
         PendingRequest pending{to_cpp_request(*request), request};
         std::lock_guard<std::mutex> lock(mtx_);
         pending_.push_back(std::move(pending));

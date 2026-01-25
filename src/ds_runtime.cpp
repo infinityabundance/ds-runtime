@@ -190,7 +190,6 @@ public:
                                      __func__);
                 req.status = RequestStatus::IoError;
                 req.errno_value = EBADF;
-                req.bytes_transferred = 0;
                 if (on_complete) {
                     on_complete(req);
                 }
@@ -208,7 +207,6 @@ public:
                                      __func__);
                 req.status = RequestStatus::IoError;
                 req.errno_value = EINVAL;
-                req.bytes_transferred = 0;
                 if (on_complete) {
                     on_complete(req);
                 }
@@ -226,7 +224,6 @@ public:
                                      __func__);
                 req.status = RequestStatus::IoError;
                 req.errno_value = EINVAL;
-                req.bytes_transferred = 0;
                 if (on_complete) {
                     on_complete(req);
                 }
@@ -244,7 +241,6 @@ public:
                                      __func__);
                 req.status = RequestStatus::IoError;
                 req.errno_value = EINVAL;
-                req.bytes_transferred = 0;
                 if (on_complete) {
                     on_complete(req);
                 }
@@ -263,43 +259,6 @@ public:
                                      __func__);
                 req.status = RequestStatus::IoError;
                 req.errno_value = EINVAL;
-                req.bytes_transferred = 0;
-                if (on_complete) {
-                    on_complete(req);
-                }
-                return;
-            }
-
-            if (req.op == RequestOp::Write && req.compression != Compression::None) {
-                report_request_error("cpu",
-                                     "submit",
-                                     "Compression is not supported for write requests",
-                                     req,
-                                     ENOTSUP,
-                                     __FILE__,
-                                     __LINE__,
-                                     __func__);
-                req.status = RequestStatus::IoError;
-                req.errno_value = ENOTSUP;
-                req.bytes_transferred = 0;
-                if (on_complete) {
-                    on_complete(req);
-                }
-                return;
-            }
-
-            if (req.op == RequestOp::Read && req.compression == Compression::GDeflate) {
-                report_request_error("cpu",
-                                     "submit",
-                                     "GDeflate is not implemented yet",
-                                     req,
-                                     ENOTSUP,
-                                     __FILE__,
-                                     __LINE__,
-                                     __func__);
-                req.status = RequestStatus::IoError;
-                req.errno_value = ENOTSUP;
-                req.bytes_transferred = 0;
                 if (on_complete) {
                     on_complete(req);
                 }
@@ -341,7 +300,6 @@ public:
                 // Successful read/write.
                 req.status      = RequestStatus::Ok;
                 req.errno_value = 0;
-                req.bytes_transferred = static_cast<std::size_t>(io_bytes);
 
                 if (req.op == RequestOp::Read) {
                     // For safety in string-based demos: if we read fewer bytes

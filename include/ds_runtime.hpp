@@ -74,7 +74,6 @@ struct Request {
     const void*   src         = nullptr; ///< Source buffer for host writes.
     void*         gpu_buffer  = nullptr; ///< Vulkan VkBuffer handle for GPU transfers.
     std::uint64_t gpu_offset  = 0;       ///< Byte offset into gpu_buffer.
-    std::size_t   bytes_transferred = 0; ///< Bytes successfully read/written.
 
     RequestOp     op          = RequestOp::Read;       ///< Read or write operation.
     RequestMemory dst_memory  = RequestMemory::Host;   ///< Destination memory location.
