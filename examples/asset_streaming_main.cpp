@@ -116,15 +116,6 @@ int main() {
     queue.submit_all();
     queue.wait_all();
 
-    const auto completed = queue.take_completed();
-    for (const auto& done : completed) {
-        std::cout << "[asset_streaming] completed op="
-                  << (done.op == RequestOp::Write ? "write" : "read")
-                  << " bytes=" << done.bytes_transferred
-                  << " status=" << (done.status == RequestStatus::Ok ? "ok" : "error")
-                  << "\n";
-    }
-
     std::cout << "[asset_streaming] read A: \"" << buffer_a.data() << "\"\n";
     std::cout << "[asset_streaming] read B: \"" << buffer_b.data() << "\"\n";
 

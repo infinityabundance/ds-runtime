@@ -15,8 +15,7 @@ typedef struct ds_queue ds_queue_t;
 
 typedef enum ds_compression {
     DS_COMPRESSION_NONE = 0,
-    DS_COMPRESSION_FAKE_UPPERCASE = 1,
-    DS_COMPRESSION_GDEFLATE = 2
+    DS_COMPRESSION_FAKE_UPPERCASE = 1
 } ds_compression;
 
 typedef enum ds_request_status {
@@ -43,7 +42,6 @@ typedef struct ds_request {
     const void*        src;
     void*              gpu_buffer;
     uint64_t           gpu_offset;
-    size_t             bytes_transferred;
     ds_request_op      op;
     ds_request_memory  dst_memory;
     ds_request_memory  src_memory;

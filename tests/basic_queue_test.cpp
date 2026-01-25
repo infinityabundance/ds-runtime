@@ -66,11 +66,6 @@ int main() {
     queue.submit_all();
     queue.wait_all();
 
-    const auto completed = queue.take_completed();
-    assert(completed.size() == 1);
-    assert(completed[0].status == RequestStatus::Ok);
-    assert(completed[0].bytes_transferred == std::strlen(payload));
-
     assert(std::strncmp(buffer.data(), payload, std::strlen(payload)) == 0);
 
     ::close(fd_read);
