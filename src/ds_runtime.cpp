@@ -385,6 +385,9 @@ struct Queue::Impl {
     explicit Impl(std::shared_ptr<Backend> backend)
         : backend_(std::move(backend))
         , in_flight_(0)
+        , total_completed_(0)
+        , total_failed_(0)
+        , total_bytes_transferred_(0)
     {}
 
     /// Enqueue a request into the pending list.
@@ -430,6 +433,15 @@ struct Queue::Impl {
                         completed_.push_back(completed_req);
                     }
 
+                    total_completed_.fetch_add(1, std::memory_order_relaxed);
+                    if (completed_req.status != RequestStatus::Ok) {
+                        total_failed_.fetch_add(1, std::memory_order_relaxed);
+                    }
+                    total_bytes_transferred_.fetch_add(
+                        completed_req.bytes_transferred,
+                        std::memory_order_relaxed
+                    );
+
                     const auto remaining =
                         in_flight_.fetch_sub(1, std::memory_order_acq_rel) - 1;
 
@@ -473,6 +485,9 @@ struct Queue::Impl {
     std::vector<Request>     completed_; ///< Requests that have completed (not yet surfaced).
 
     std::atomic<std::size_t> in_flight_; ///< Number of requests currently in flight.
+    std::atomic<std::size_t> total_completed_; ///< Total completed requests.
+    std::atomic<std::size_t> total_failed_; ///< Total failed requests.
+    std::atomic<std::size_t> total_bytes_transferred_; ///< Total bytes transferred.
 
     mutable std::mutex       wait_mtx_;  ///< Guards wait_cv_ for wait_all().
     std::condition_variable  wait_cv_;   ///< Used to block/wake threads in wait_all().
