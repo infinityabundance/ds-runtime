@@ -1,0 +1,10 @@
+prefix=@CMAKE_INSTALL_PREFIX@
+exec_prefix=${prefix}
+libdir=@CMAKE_INSTALL_FULL_LIBDIR@
+includedir=@CMAKE_INSTALL_FULL_INCLUDEDIR@
+
+Name: ds-runtime
+Description: Linux-native DirectStorage-style runtime
+Version: @PROJECT_VERSION@
+Libs: -L${libdir} -lds_runtime @DS_RUNTIME_PKG_LIBS_EXTRA@
+Cflags: -I${includedir} @DS_RUNTIME_PKG_CFLAGS_EXTRA@

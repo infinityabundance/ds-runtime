@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # ------------------------------------------------------------
 # Minimum CMake version required to configure this project.
 # 3.16+ is widely available on modern Linux distributions.
@@ -26,9 +25,10 @@ project(ds-runtime
 # the core runtime library.
 # ============================================================
 
-
 option(DS_BUILD_EXAMPLES "Build ds-runtime example programs" ON)
 option(DS_BUILD_TESTS "Build ds-runtime tests" OFF)
+option(DS_BUILD_SHARED "Build shared ds-runtime library" ON)
+option(DS_BUILD_STATIC "Build static ds-runtime library" ON)
 
 # ============================================================
 # Global C++ configuration
@@ -36,25 +36,17 @@ option(DS_BUILD_TESTS "Build ds-runtime tests" OFF)
 # The runtime targets C++20 and avoids compiler-specific
 # language extensions for portability.
 # ============================================================
-=======
-cmake_minimum_required(VERSION 3.16)
-project(ds_runtime LANGUAGES CXX)
->>>>>>> origin/main
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-<<<<<<< HEAD
 # ============================================================
 # Compiler warnings
 #
 # Apply a reasonable set of warnings globally for all targets.
 # These flags are intentionally conservative and should be
 # warning-clean for well-formed code.
-#
-# This block is limited to GCC and Clang to avoid breaking
-# other toolchains.
 # ============================================================
 
 if (CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
@@ -75,7 +67,10 @@ endif()
 # ============================================================
 
 find_package(Vulkan QUIET)
-
+find_package(PkgConfig QUIET)
+if (PkgConfig_FOUND)
+    pkg_check_modules(LIBURING liburing)
+endif()
 
 # ============================================================
 # Core runtime library
@@ -84,117 +79,183 @@ find_package(Vulkan QUIET)
 # API and implementation of the DirectStorage-style runtime.
 # ============================================================
 
-=======
-# Library
->>>>>>> origin/main
-add_library(ds_runtime
+set(DS_RUNTIME_SOURCES
     src/ds_runtime.cpp
+    src/ds_runtime_c.cpp
+    src/ds_runtime_logging.cpp
 )
 
-<<<<<<< HEAD
+if (Vulkan_FOUND)
+    list(APPEND DS_RUNTIME_SOURCES src/ds_runtime_vulkan.cpp)
+endif()
+if (LIBURING_FOUND)
+    list(APPEND DS_RUNTIME_SOURCES src/ds_runtime_uring.cpp)
+endif()
 
-# ------------------------------------------------------------
-# Public include directory:
-#
-# - Marked PUBLIC so consumers automatically inherit it
-# - Allows future installation/export without refactoring
-# ------------------------------------------------------------
+if (DS_BUILD_SHARED)
+    add_library(ds_runtime SHARED ${DS_RUNTIME_SOURCES})
+    set_target_properties(ds_runtime PROPERTIES
+        VERSION ${PROJECT_VERSION}
+        SOVERSION ${PROJECT_VERSION_MAJOR}
+    )
+    target_include_directories(ds_runtime
+        PUBLIC
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(ds_runtime
+        PUBLIC
+            pthread
+    )
+    if (Vulkan_FOUND)
+        target_link_libraries(ds_runtime PUBLIC Vulkan::Vulkan)
+        target_compile_definitions(ds_runtime PUBLIC DS_RUNTIME_HAS_VULKAN)
+    endif()
+    if (LIBURING_FOUND)
+        target_link_libraries(ds_runtime PUBLIC ${LIBURING_LIBRARIES})
+        target_include_directories(ds_runtime PUBLIC ${LIBURING_INCLUDE_DIRS})
+        target_compile_definitions(ds_runtime PUBLIC DS_RUNTIME_HAS_IO_URING)
+    endif()
+endif()
 
+if (DS_BUILD_STATIC)
+    add_library(ds_runtime_static STATIC ${DS_RUNTIME_SOURCES})
+    target_include_directories(ds_runtime_static
+        PUBLIC
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+    target_link_libraries(ds_runtime_static
+        PUBLIC
+            pthread
+    )
+    if (Vulkan_FOUND)
+        target_link_libraries(ds_runtime_static PUBLIC Vulkan::Vulkan)
+        target_compile_definitions(ds_runtime_static PUBLIC DS_RUNTIME_HAS_VULKAN)
+    endif()
+    if (LIBURING_FOUND)
+        target_link_libraries(ds_runtime_static PUBLIC ${LIBURING_LIBRARIES})
+        target_include_directories(ds_runtime_static PUBLIC ${LIBURING_INCLUDE_DIRS})
+        target_compile_definitions(ds_runtime_static PUBLIC DS_RUNTIME_HAS_IO_URING)
+    endif()
+endif()
 
-=======
->>>>>>> origin/main
-target_include_directories(ds_runtime
-    PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-<<<<<<< HEAD
 # ============================================================
 # Example programs
 #
 # Example targets are intentionally optional and excluded
 # when DS_BUILD_EXAMPLES=OFF.
-#
-# These are demonstrations and experiments, not part of the
-# core runtime library.
 # ============================================================
 
 if (DS_BUILD_EXAMPLES)
-
-    # --------------------------------------------------------
-    # CPU-only demo
-    #
-    # Demonstrates:
-    # - ds::Queue usage
-    # - asynchronous request submission
-    # - CPU backend behavior
-    # --------------------------------------------------------
     add_executable(ds_demo
         examples/ds_demo_main.cpp
     )
 
-    # --------------------------------------------------------
-    # Link against the runtime library.
-    # pthread is linked explicitly for std::thread usage on
-    # POSIX platforms.
-    # --------------------------------------------------------
-    target_link_libraries(ds_demo
-        PRIVATE
-            ds_runtime
-            pthread
+    add_executable(ds_asset_streaming
+        examples/asset_streaming_main.cpp
     )
 
-    # --------------------------------------------------------
-    # Experimental Vulkan copy demo
-    #
-    # This target is only built if Vulkan is available.
-    # It serves as groundwork for future GPU backends and
-    # does not represent a full DirectStorage implementation.
-    # --------------------------------------------------------
+    if (TARGET ds_runtime)
+        target_link_libraries(ds_demo PRIVATE ds_runtime)
+        target_link_libraries(ds_asset_streaming PRIVATE ds_runtime)
+    elseif (TARGET ds_runtime_static)
+        target_link_libraries(ds_demo PRIVATE ds_runtime_static)
+        target_link_libraries(ds_asset_streaming PRIVATE ds_runtime_static)
+    endif()
+
     if (Vulkan_FOUND)
         add_executable(vk_copy_test
             examples/vk-copy-test/vk_copy_test.cpp
         )
 
-        target_link_libraries(vk_copy_test
-            PRIVATE
-                ds_runtime
-                Vulkan::Vulkan
-        )
+        if (TARGET ds_runtime)
+            target_link_libraries(vk_copy_test PRIVATE ds_runtime Vulkan::Vulkan)
+        elseif (TARGET ds_runtime_static)
+            target_link_libraries(vk_copy_test PRIVATE ds_runtime_static Vulkan::Vulkan)
+        endif()
     else()
         message(STATUS
             "Vulkan not found – vk_copy_test example will not be built"
         )
     endif()
-
 endif()
 
 # ============================================================
 # Tests (placeholder)
 #
 # Tests are currently optional and disabled by default.
-# This block exists to make future test integration trivial
-# without restructuring the build.
 # ============================================================
 
 if (DS_BUILD_TESTS)
-    # add_executable(ds_runtime_tests tests/basic_queue_test.cpp)
-    # target_link_libraries(ds_runtime_tests PRIVATE ds_runtime pthread)
+    add_executable(ds_runtime_tests
+        tests/basic_queue_test.cpp
+    )
+
+    if (TARGET ds_runtime)
+        target_link_libraries(ds_runtime_tests PRIVATE ds_runtime)
+    elseif (TARGET ds_runtime_static)
+        target_link_libraries(ds_runtime_tests PRIVATE ds_runtime_static)
+    endif()
+
+    enable_testing()
+    add_test(NAME ds_runtime_tests COMMAND ds_runtime_tests)
+
+    if (LIBURING_FOUND)
+        add_executable(ds_io_uring_tests
+            tests/io_uring_backend_test.cpp
+        )
+        if (TARGET ds_runtime)
+            target_link_libraries(ds_io_uring_tests PRIVATE ds_runtime)
+        elseif (TARGET ds_runtime_static)
+            target_link_libraries(ds_io_uring_tests PRIVATE ds_runtime_static)
+        endif()
+        add_test(NAME ds_io_uring_tests COMMAND ds_io_uring_tests)
+    endif()
 endif()
-=======
-target_compile_options(ds_runtime
-    PRIVATE
-        -Wall -Wextra -Wpedantic
+
+# ============================================================
+# Installation
+# ============================================================
+
+include(GNUInstallDirs)
+
+if (TARGET ds_runtime)
+    install(TARGETS ds_runtime
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    )
+endif()
+
+if (TARGET ds_runtime_static)
+    install(TARGETS ds_runtime_static
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    )
+endif()
+
+install(FILES
+    include/ds_runtime.hpp
+    include/ds_runtime_c.h
+    include/ds_runtime_vulkan.hpp
+    include/ds_runtime_uring.hpp
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
-# Example executable
-add_executable(ds_demo
-    examples/ds_demo_main.cpp
+set(DS_RUNTIME_PKG_LIBS_EXTRA "")
+set(DS_RUNTIME_PKG_CFLAGS_EXTRA "")
+if (Vulkan_FOUND)
+    set(DS_RUNTIME_PKG_LIBS_EXTRA "-lvulkan")
+    set(DS_RUNTIME_PKG_CFLAGS_EXTRA "-DDS_RUNTIME_HAS_VULKAN")
+endif()
+if (LIBURING_FOUND)
+    set(DS_RUNTIME_PKG_LIBS_EXTRA "${DS_RUNTIME_PKG_LIBS_EXTRA} -luring")
+    set(DS_RUNTIME_PKG_CFLAGS_EXTRA "${DS_RUNTIME_PKG_CFLAGS_EXTRA} -DDS_RUNTIME_HAS_IO_URING")
+endif()
+
+configure_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/ds-runtime.pc.in
+    ${CMAKE_CURRENT_BINARY_DIR}/ds-runtime.pc
+    @ONLY
 )
 
-target_link_libraries(ds_demo
-    PRIVATE
-        ds_runtime
-        pthread
+install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/ds-runtime.pc
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/pkgconfig
 )
->>>>>>> origin/main

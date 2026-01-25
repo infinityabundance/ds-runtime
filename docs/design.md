@@ -55,19 +55,17 @@ hardware-accelerated paths.
 
 ---
 
-### Vulkan backend (planned)
+### Vulkan backend (experimental)
 
-A future `VulkanBackend` will implement the same `ds::Backend` interface.
+An experimental `VulkanBackend` implements the same `ds::Backend` interface.
 
 Expected responsibilities:
 
 - Read file data into host-visible staging buffers
 
-- Dispatch Vulkan compute workloads for:
+- Issue Vulkan buffer copies between staging buffers and GPU buffers
 
-***buffer copies
-
-***decompression
+- Dispatch Vulkan compute workloads for future decompression stages
 
 Signal completion via fences or timeline semaphores
 
@@ -80,6 +78,19 @@ Importantly:
 This allows correctness to be validated independently of GPU acceleration.
 
 ---
+
+### io_uring backend (experimental)
+
+An experimental `IoUringBackend` executes host-side requests using `io_uring`.
+
+Expected responsibilities:
+
+- Submit read/write operations via the kernel ring
+- Invoke completion callbacks when CQEs arrive
+- Reject GPU-targeted requests (host-only backend)
+
+This backend provides a path toward lower-overhead I/O without changing the
+public queue API.
 
 ### Compression handling
 
@@ -103,6 +114,15 @@ Planned progression:
 Compression is treated as a backend concern, not a queue concern.
 
 ---
+
+### Error reporting
+
+The runtime exposes a process-wide error callback (`ds::set_error_callback`)
+that receives rich context (subsystem, operation, source location, timestamp)
+to aid debugging. Backends call `ds::report_error` whenever they encounter
+errors during submission, I/O, or GPU transfers. For request-specific failures,
+backends use `ds::report_request_error` to attach fd/offset/size and memory
+target details.
 
 ### Integration with Wine / Proton
 
