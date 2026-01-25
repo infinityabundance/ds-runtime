@@ -2,7 +2,7 @@
 
 <p align="center">
   <a href="https://github.com/infinityabundance/ds-runtime">
-    <img src="assets/ds-runtime.png" alt="ds-runtime logo" width="140"/>
+    <img src="assets/ds-runtime.png" alt="ds-runtime logo" width="240"/>
   </a>
 </p>
 
