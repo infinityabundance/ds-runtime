@@ -1,7 +1,9 @@
 # ds-runtime
 
 <p align="center">
-  <img src="assets/ds_runtime_logo.png" alt="ds-runtime logo" width="180">
+  <a href="https://github.com/infinityabundance/ds-runtime">
+    <img src="assets/ds-runtime.png" alt="ds-runtime logo" width="140"/>
+  </a>
 </p>
 
 <p align="center">
