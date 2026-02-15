@@ -1,0 +1,10 @@
+/home/runner/work/ds-runtime/ds-runtime/_codeql_build_dir/CMakeFiles/ds_runtime.dir
+/home/runner/work/ds-runtime/ds-runtime/_codeql_build_dir/CMakeFiles/ds_runtime_static.dir
+/home/runner/work/ds-runtime/ds-runtime/_codeql_build_dir/CMakeFiles/ds_demo.dir
+/home/runner/work/ds-runtime/ds-runtime/_codeql_build_dir/CMakeFiles/ds_asset_streaming.dir
+/home/runner/work/ds-runtime/ds-runtime/_codeql_build_dir/CMakeFiles/edit_cache.dir
+/home/runner/work/ds-runtime/ds-runtime/_codeql_build_dir/CMakeFiles/rebuild_cache.dir
+/home/runner/work/ds-runtime/ds-runtime/_codeql_build_dir/CMakeFiles/list_install_components.dir
+/home/runner/work/ds-runtime/ds-runtime/_codeql_build_dir/CMakeFiles/install.dir
+/home/runner/work/ds-runtime/ds-runtime/_codeql_build_dir/CMakeFiles/install/local.dir
+/home/runner/work/ds-runtime/ds-runtime/_codeql_build_dir/CMakeFiles/install/strip.dir

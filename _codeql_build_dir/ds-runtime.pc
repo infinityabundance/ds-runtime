@@ -1,0 +1,10 @@
+prefix=/usr/local
+exec_prefix=${prefix}
+libdir=/usr/local/lib
+includedir=/usr/local/include
+
+Name: ds-runtime
+Description: Linux-native DirectStorage-style runtime
+Version: 0.1.0
+Libs: -L${libdir} -lds_runtime 
+Cflags: -I${includedir} 

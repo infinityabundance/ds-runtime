@@ -1,0 +1,2 @@
+/usr/bin/ar qc libds_runtime_static.a CMakeFiles/ds_runtime_static.dir/src/ds_runtime.cpp.o CMakeFiles/ds_runtime_static.dir/src/ds_runtime_c.cpp.o CMakeFiles/ds_runtime_static.dir/src/ds_runtime_logging.cpp.o
+/usr/bin/ranlib libds_runtime_static.a
