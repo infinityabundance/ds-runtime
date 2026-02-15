@@ -1,1 +1,0 @@
-/home/runner/work/ds-runtime/.codeql-scratch/dbs/cpp/working/autobuild/bin/c++ -O3 -DNDEBUG -Wl,--dependency-file=CMakeFiles/ds_asset_streaming.dir/link.d CMakeFiles/ds_asset_streaming.dir/examples/asset_streaming_main.cpp.o -o ds_asset_streaming  -Wl,-rpath,/home/runner/work/ds-runtime/ds-runtime/_codeql_build_dir libds_runtime.so.0.1.0 -lpthread
