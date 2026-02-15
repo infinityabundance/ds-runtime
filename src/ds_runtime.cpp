@@ -300,6 +300,7 @@ public:
                 // Successful read/write.
                 req.status      = RequestStatus::Ok;
                 req.errno_value = 0;
+                req.bytes_transferred = static_cast<std::size_t>(io_bytes);
 
                 if (req.op == RequestOp::Read) {
                     // For safety in string-based demos: if we read fewer bytes
@@ -474,6 +475,17 @@ struct Queue::Impl {
     /// other threads may be submitting or completing work concurrently.
     std::size_t in_flight() const {
         return in_flight_.load(std::memory_order_acquire);
+    }
+
+    /// Retrieve and clear the list of completed requests.
+    ///
+    /// This returns a snapshot of completed requests accumulated since the
+    /// last call. The caller can inspect status, bytes_transferred, etc.
+    std::vector<Request> take_completed() {
+        std::lock_guard<std::mutex> lock(mtx_);
+        std::vector<Request> result;
+        result.swap(completed_);
+        return result;
     }
 
     // (Optional) You could expose access to completed_ later to let users

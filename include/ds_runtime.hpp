@@ -81,6 +81,7 @@ struct Request {
     Compression   compression = Compression::None;       ///< Compression mode.
     RequestStatus status      = RequestStatus::Pending;  ///< Result status.
     int           errno_value = 0;        ///< errno value on IoError, 0 otherwise.
+    std::size_t   bytes_transferred = 0;  ///< Number of bytes actually transferred.
 };
 
 // -----------------------------------------------------------------------------
