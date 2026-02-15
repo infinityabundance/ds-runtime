@@ -46,11 +46,21 @@ This repository intentionally prioritizes structure, clarity, and correctness ov
 ---
 ## 🚧 Project status
 
-- Status: Experimental
-- Backend: CPU (implemented)
-- GPU/Vulkan backend: Experimental (file ↔ GPU buffer transfers)
+> **⚠️ IMPORTANT: Current build is broken - see [ANALYSIS.md](ANALYSIS.md) for details**
 
-The current codebase implements a complete, working CPU backend and a clean public API designed to support GPU-accelerated backends in the future.
+- Status: Experimental
+- Backend: CPU (implemented, **build broken**)
+- GPU/Vulkan backend: Experimental (staging buffer copies only, **no GPU compute yet**)
+- io_uring backend: Experimental (host memory only, **build broken**)
+
+### Critical Issues
+The codebase currently has **compilation errors** preventing builds:
+- Missing `bytes_transferred` field in `Request` struct
+- Missing `take_completed()` method implementation
+
+See [MISSING_FEATURES.md](MISSING_FEATURES.md) for the complete list of issues and [COMPARISON.md](COMPARISON.md) for documentation vs reality comparison.
+
+The current codebase aims to provide a complete, working CPU backend and a clean public API designed to support GPU-accelerated backends in the future. **Active development required to reach that goal.**
 
 ---
 
@@ -489,17 +499,19 @@ The goal is to explore what a **native Linux DirectStorage-style runtime** could
 
 ## 🛣️ Roadmap (rough)
 
- ✅ Vulkan backend (file ↔ GPU buffer transfers; compute copy/decompression planned)
+ 🚨 **Fix build issues** (missing fields/methods - CRITICAL)
+
+ ⚠️ Vulkan backend (staging buffer copies working, compute pipeline TODO)
 
  ◻️ Real compression format (CPU GDeflate first)
 
- ✅ `io_uring` backend (host memory)
+ ⚠️ `io_uring` backend (host memory, needs verification)
 
  ◻️ Wine / Proton integration experiments
 
  ◻️ Real-world game testing
 
-This project intentionally starts small and correct.
+This project intentionally starts small and correct. See [MISSING_FEATURES.md](MISSING_FEATURES.md) for detailed status.
 
 ---
 
