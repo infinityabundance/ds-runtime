@@ -39,8 +39,8 @@ enum class Compression {
 enum class RequestStatus {
     Pending,   ///< Not yet submitted or still in flight.
     Ok,        ///< Completed successfully.
-    IoError    ///< I/O error; errno_value is set.
-    // Additional statuses could be added later (e.g. Cancelled).
+    IoError,   ///< I/O error; errno_value is set.
+    Cancelled  ///< Request was cancelled before completion.
 };
 
 /// Operation type for a Request.
@@ -81,6 +81,7 @@ struct Request {
     Compression   compression = Compression::None;       ///< Compression mode.
     RequestStatus status      = RequestStatus::Pending;  ///< Result status.
     int           errno_value = 0;        ///< errno value on IoError, 0 otherwise.
+    std::size_t   bytes_transferred = 0;  ///< Number of bytes actually transferred.
 };
 
 // -----------------------------------------------------------------------------

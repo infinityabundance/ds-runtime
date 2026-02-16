@@ -300,6 +300,7 @@ public:
                 // Successful read/write.
                 req.status      = RequestStatus::Ok;
                 req.errno_value = 0;
+                req.bytes_transferred = static_cast<std::size_t>(io_bytes);
 
                 if (req.op == RequestOp::Read) {
                     // For safety in string-based demos: if we read fewer bytes
@@ -317,17 +318,35 @@ public:
             // "Decompression" pass.
             //
             // In real DirectStorage-style pipelines, this would be a true
-            // codec (e.g., GDeflate) running on CPU or GPU. Here we simply
-            // uppercase ASCII characters for demonstration and testing.
+            // codec (e.g., GDeflate) running on CPU or GPU. Here we handle
+            // different compression modes.
             if (req.op == RequestOp::Read &&
-                req.status == RequestStatus::Ok &&
-                req.compression == Compression::FakeUppercase) {
+                req.status == RequestStatus::Ok) {
 
-                char* c = static_cast<char*>(req.dst);
-                for (std::size_t i = 0; i < req.size && c[i] != '\0'; ++i) {
-                    c[i] = static_cast<char>(
-                        std::toupper(static_cast<unsigned char>(c[i]))
+                if (req.compression == Compression::FakeUppercase) {
+                    // Demo mode: uppercase ASCII characters for demonstration and testing.
+                    char* c = static_cast<char*>(req.dst);
+                    for (std::size_t i = 0; i < req.size && c[i] != '\0'; ++i) {
+                        c[i] = static_cast<char>(
+                            std::toupper(static_cast<unsigned char>(c[i]))
+                        );
+                    }
+                } else if (req.compression == Compression::GDeflate) {
+                    // GDeflate decompression requested but not yet implemented.
+                    // Report error via the error callback system.
+                    report_request_error(
+                        "cpu",
+                        "decompression",
+                        "GDeflate compression is not yet implemented (ENOTSUP)",
+                        req,
+                        ENOTSUP,
+                        __FILE__,
+                        __LINE__,
+                        __func__
                     );
+                    req.status = RequestStatus::IoError;
+                    req.errno_value = ENOTSUP;
+                    req.bytes_transferred = 0;
                 }
             }
 
@@ -474,6 +493,17 @@ struct Queue::Impl {
     /// other threads may be submitting or completing work concurrently.
     std::size_t in_flight() const {
         return in_flight_.load(std::memory_order_acquire);
+    }
+
+    /// Retrieve and clear the list of completed requests.
+    ///
+    /// This returns a snapshot of completed requests accumulated since the
+    /// last call. The caller can inspect status, bytes_transferred, etc.
+    std::vector<Request> take_completed() {
+        std::lock_guard<std::mutex> lock(mtx_);
+        std::vector<Request> result;
+        result.swap(completed_);
+        return result;
     }
 
     // (Optional) You could expose access to completed_ later to let users

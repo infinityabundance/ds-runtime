@@ -196,8 +196,41 @@ if (DS_BUILD_TESTS)
         target_link_libraries(ds_runtime_tests PRIVATE ds_runtime_static)
     endif()
 
+    # GDeflate stub test (verifies error handling)
+    add_executable(ds_gdeflate_stub_test
+        tests/compression_gdeflate_stub_test.cpp
+    )
+    if (TARGET ds_runtime)
+        target_link_libraries(ds_gdeflate_stub_test PRIVATE ds_runtime)
+    elseif (TARGET ds_runtime_static)
+        target_link_libraries(ds_gdeflate_stub_test PRIVATE ds_runtime_static)
+    endif()
+
+    # Comprehensive CPU backend test
+    add_executable(ds_cpu_backend_test
+        tests/cpu_backend_test.cpp
+    )
+    if (TARGET ds_runtime)
+        target_link_libraries(ds_cpu_backend_test PRIVATE ds_runtime)
+    elseif (TARGET ds_runtime_static)
+        target_link_libraries(ds_cpu_backend_test PRIVATE ds_runtime_static)
+    endif()
+
+    # Error handling test
+    add_executable(ds_error_handling_test
+        tests/error_handling_test.cpp
+    )
+    if (TARGET ds_runtime)
+        target_link_libraries(ds_error_handling_test PRIVATE ds_runtime)
+    elseif (TARGET ds_runtime_static)
+        target_link_libraries(ds_error_handling_test PRIVATE ds_runtime_static)
+    endif()
+
     enable_testing()
     add_test(NAME ds_runtime_tests COMMAND ds_runtime_tests)
+    add_test(NAME ds_gdeflate_stub_test COMMAND ds_gdeflate_stub_test)
+    add_test(NAME ds_cpu_backend_test COMMAND ds_cpu_backend_test)
+    add_test(NAME ds_error_handling_test COMMAND ds_error_handling_test)
 
     if (LIBURING_FOUND)
         add_executable(ds_io_uring_tests
