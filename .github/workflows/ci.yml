@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        compiler: [gcc, clang]
+        build_type: [Debug, Release]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake build-essential
+    
+    - name: Configure CMake (GCC)
+      if: matrix.compiler == 'gcc'
+      run: |
+        cmake -B build \
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+          -DCMAKE_C_COMPILER=gcc \
+          -DCMAKE_CXX_COMPILER=g++ \
+          -DDS_BUILD_TESTS=ON \
+          -DDS_BUILD_EXAMPLES=ON
+    
+    - name: Configure CMake (Clang)
+      if: matrix.compiler == 'clang'
+      run: |
+        cmake -B build \
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+          -DCMAKE_C_COMPILER=clang \
+          -DCMAKE_CXX_COMPILER=clang++ \
+          -DDS_BUILD_TESTS=ON \
+          -DDS_BUILD_EXAMPLES=ON
+    
+    - name: Build
+      run: cmake --build build --config ${{ matrix.build_type }} -j$(nproc)
+    
+    - name: Run tests
+      run: |
+        cd build
+        ctest --output-on-failure --build-config ${{ matrix.build_type }}
+    
+    - name: Test demo programs
+      run: |
+        cd build
+        ./ds_demo
+        ./ds_asset_streaming
+
+  build-with-optional-deps:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Install dependencies (including optional)
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake build-essential liburing-dev vulkan-sdk
+      continue-on-error: true
+    
+    - name: Configure CMake with optional dependencies
+      run: |
+        cmake -B build \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DDS_BUILD_TESTS=ON \
+          -DDS_BUILD_EXAMPLES=ON
+    
+    - name: Build
+      run: cmake --build build -j$(nproc)
+    
+    - name: Run tests
+      run: |
+        cd build
+        ctest --output-on-failure
+
+  static-analysis:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y cmake build-essential cppcheck
+    
+    - name: Run cppcheck
+      run: |
+        cppcheck --enable=all --suppress=missingIncludeSystem \
+          --error-exitcode=1 \
+          -I include \
+          src/ tests/ examples/
+      continue-on-error: true
