@@ -371,6 +371,92 @@ private:
     VkDescriptorPool pool_;
 };
 
+// Helper functions for updating descriptor sets with buffer bindings.
+namespace descriptor_updates {
+
+// Update a descriptor set with buffer bindings.
+// Used to bind actual VkBuffer handles to descriptor set bindings.
+struct BufferBinding {
+    uint32_t binding;        // Binding index (matches shader layout)
+    VkBuffer buffer;         // Buffer to bind
+    VkDeviceSize offset;     // Offset into buffer
+    VkDeviceSize range;      // Size of buffer region (or VK_WHOLE_SIZE)
+};
+
+// Update descriptor set with storage buffer bindings.
+// Example: bind input and output buffers for compute shader.
+inline void update_storage_buffers(VkDevice device,
+                                   VkDescriptorSet descriptor_set,
+                                   const std::vector<BufferBinding>& bindings)
+{
+    std::vector<VkDescriptorBufferInfo> buffer_infos;
+    std::vector<VkWriteDescriptorSet> writes;
+    
+    buffer_infos.reserve(bindings.size());
+    writes.reserve(bindings.size());
+    
+    for (const auto& binding : bindings) {
+        // Create buffer info
+        VkDescriptorBufferInfo buffer_info{};
+        buffer_info.buffer = binding.buffer;
+        buffer_info.offset = binding.offset;
+        buffer_info.range = binding.range;
+        buffer_infos.push_back(buffer_info);
+        
+        // Create write descriptor
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet = descriptor_set;
+        write.dstBinding = binding.binding;
+        write.dstArrayElement = 0;
+        write.descriptorCount = 1;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        write.pBufferInfo = &buffer_infos[writes.size()];
+        writes.push_back(write);
+    }
+    
+    // Update all bindings at once
+    vkUpdateDescriptorSets(device,
+                          static_cast<uint32_t>(writes.size()),
+                          writes.data(),
+                          0, nullptr);
+}
+
+// Convenience function for 2-buffer copy layout (input, output)
+inline void update_copy_buffers(VkDevice device,
+                               VkDescriptorSet descriptor_set,
+                               VkBuffer input_buffer,
+                               VkDeviceSize input_size,
+                               VkBuffer output_buffer,
+                               VkDeviceSize output_size)
+{
+    std::vector<BufferBinding> bindings = {
+        {0, input_buffer, 0, input_size},   // Binding 0: input
+        {1, output_buffer, 0, output_size}  // Binding 1: output
+    };
+    update_storage_buffers(device, descriptor_set, bindings);
+}
+
+// Convenience function for 3-buffer decompression layout
+inline void update_decompression_buffers(VkDevice device,
+                                        VkDescriptorSet descriptor_set,
+                                        VkBuffer compressed_buffer,
+                                        VkDeviceSize compressed_size,
+                                        VkBuffer metadata_buffer,
+                                        VkDeviceSize metadata_size,
+                                        VkBuffer decompressed_buffer,
+                                        VkDeviceSize decompressed_size)
+{
+    std::vector<BufferBinding> bindings = {
+        {0, compressed_buffer, 0, compressed_size},      // Binding 0: compressed
+        {1, metadata_buffer, 0, metadata_size},          // Binding 1: metadata
+        {2, decompressed_buffer, 0, decompressed_size}   // Binding 2: decompressed
+    };
+    update_storage_buffers(device, descriptor_set, bindings);
+}
+
+} // namespace descriptor_updates
+
 // Simple fixed-size thread pool to keep backend execution async.
 // This mirrors the CPU backend model but is local to the Vulkan backend
 // to keep responsibilities self-contained.
