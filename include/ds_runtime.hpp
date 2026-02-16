@@ -39,8 +39,8 @@ enum class Compression {
 enum class RequestStatus {
     Pending,   ///< Not yet submitted or still in flight.
     Ok,        ///< Completed successfully.
-    IoError    ///< I/O error; errno_value is set.
-    // Additional statuses could be added later (e.g. Cancelled).
+    IoError,   ///< I/O error; errno_value is set.
+    Cancelled  ///< Request was cancelled before completion.
 };
 
 /// Operation type for a Request.

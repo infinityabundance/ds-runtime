@@ -15,13 +15,15 @@ typedef struct ds_queue ds_queue_t;
 
 typedef enum ds_compression {
     DS_COMPRESSION_NONE = 0,
-    DS_COMPRESSION_FAKE_UPPERCASE = 1
+    DS_COMPRESSION_FAKE_UPPERCASE = 1,
+    DS_COMPRESSION_GDEFLATE = 2
 } ds_compression;
 
 typedef enum ds_request_status {
     DS_REQUEST_PENDING = 0,
     DS_REQUEST_OK = 1,
-    DS_REQUEST_IO_ERROR = 2
+    DS_REQUEST_IO_ERROR = 2,
+    DS_REQUEST_CANCELLED = 3
 } ds_request_status;
 
 typedef enum ds_request_op {
@@ -48,6 +50,7 @@ typedef struct ds_request {
     ds_compression     compression;
     ds_request_status  status;
     int                errno_value;
+    size_t             bytes_transferred;
 } ds_request;
 
 typedef void (*ds_completion_callback)(ds_request* request, void* user_data);

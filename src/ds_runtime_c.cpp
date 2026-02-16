@@ -26,6 +26,8 @@ ds::Compression to_cpp_compression(ds_compression compression) {
     switch (compression) {
         case DS_COMPRESSION_FAKE_UPPERCASE:
             return ds::Compression::FakeUppercase;
+        case DS_COMPRESSION_GDEFLATE:
+            return ds::Compression::GDeflate;
         case DS_COMPRESSION_NONE:
         default:
             return ds::Compression::None;
@@ -61,6 +63,8 @@ ds_request_status to_c_status(ds::RequestStatus status) {
             return DS_REQUEST_OK;
         case ds::RequestStatus::IoError:
             return DS_REQUEST_IO_ERROR;
+        case ds::RequestStatus::Cancelled:
+            return DS_REQUEST_CANCELLED;
         case ds::RequestStatus::Pending:
         default:
             return DS_REQUEST_PENDING;
@@ -84,6 +88,7 @@ ds::Request to_cpp_request(const ds_request& request) {
     cpp.compression = to_cpp_compression(request.compression);
     cpp.status = ds::RequestStatus::Pending;
     cpp.errno_value = 0;
+    cpp.bytes_transferred = 0;
     return cpp;
 }
 
@@ -91,6 +96,7 @@ ds::Request to_cpp_request(const ds_request& request) {
 void update_c_request(ds_request& c_req, const ds::Request& cpp_req) {
     c_req.status = to_c_status(cpp_req.status);
     c_req.errno_value = cpp_req.errno_value;
+    c_req.bytes_transferred = cpp_req.bytes_transferred;
 }
 
 // Track a C request alongside its C++ equivalent so we can
