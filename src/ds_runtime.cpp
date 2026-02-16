@@ -318,17 +318,35 @@ public:
             // "Decompression" pass.
             //
             // In real DirectStorage-style pipelines, this would be a true
-            // codec (e.g., GDeflate) running on CPU or GPU. Here we simply
-            // uppercase ASCII characters for demonstration and testing.
+            // codec (e.g., GDeflate) running on CPU or GPU. Here we handle
+            // different compression modes.
             if (req.op == RequestOp::Read &&
-                req.status == RequestStatus::Ok &&
-                req.compression == Compression::FakeUppercase) {
+                req.status == RequestStatus::Ok) {
 
-                char* c = static_cast<char*>(req.dst);
-                for (std::size_t i = 0; i < req.size && c[i] != '\0'; ++i) {
-                    c[i] = static_cast<char>(
-                        std::toupper(static_cast<unsigned char>(c[i]))
+                if (req.compression == Compression::FakeUppercase) {
+                    // Demo mode: uppercase ASCII characters for demonstration and testing.
+                    char* c = static_cast<char*>(req.dst);
+                    for (std::size_t i = 0; i < req.size && c[i] != '\0'; ++i) {
+                        c[i] = static_cast<char>(
+                            std::toupper(static_cast<unsigned char>(c[i]))
+                        );
+                    }
+                } else if (req.compression == Compression::GDeflate) {
+                    // GDeflate decompression requested but not yet implemented.
+                    // Report error via the error callback system.
+                    report_request_error(
+                        "cpu",
+                        "decompression",
+                        "GDeflate compression is not yet implemented (ENOTSUP)",
+                        req,
+                        ENOTSUP,
+                        __FILE__,
+                        __LINE__,
+                        __func__
                     );
+                    req.status = RequestStatus::IoError;
+                    req.errno_value = ENOTSUP;
+                    req.bytes_transferred = 0;
                 }
             }
 
