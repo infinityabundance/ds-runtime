@@ -7,9 +7,11 @@
 #include <cerrno>
 #include <condition_variable>
 #include <cstring>
+#include <fstream>
 #include <functional>
 #include <mutex>
 #include <queue>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 
@@ -19,6 +21,51 @@
 namespace ds {
 
 namespace {
+
+// Load SPIR-V bytecode from a file.
+// Returns the bytecode as a vector of uint32_t words.
+// Throws std::runtime_error if the file cannot be read or is invalid.
+std::vector<uint32_t> load_spirv_from_file(const std::string& path) {
+    // Open file in binary mode, seek to end to get size
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file) {
+        throw std::runtime_error("Failed to open SPIR-V file: " + path);
+    }
+
+    // Get file size
+    std::streamsize size = file.tellg();
+    if (size <= 0) {
+        throw std::runtime_error("SPIR-V file is empty: " + path);
+    }
+
+    // SPIR-V must be a multiple of 4 bytes (32-bit words)
+    if (size % 4 != 0) {
+        throw std::runtime_error("SPIR-V file size is not a multiple of 4 bytes: " + path);
+    }
+
+    // Seek back to beginning
+    file.seekg(0, std::ios::beg);
+
+    // Read the file into a buffer
+    std::vector<char> buffer(static_cast<std::size_t>(size));
+    if (!file.read(buffer.data(), size)) {
+        throw std::runtime_error("Failed to read SPIR-V file: " + path);
+    }
+
+    // Validate SPIR-V magic number (0x07230203 in little-endian)
+    if (buffer.size() >= 4) {
+        uint32_t magic = *reinterpret_cast<const uint32_t*>(buffer.data());
+        if (magic != 0x07230203) {
+            throw std::runtime_error("Invalid SPIR-V magic number in file: " + path);
+        }
+    }
+
+    // Convert to uint32_t vector
+    std::vector<uint32_t> spirv(buffer.size() / 4);
+    std::memcpy(spirv.data(), buffer.data(), buffer.size());
+
+    return spirv;
+}
 
 // Simple fixed-size thread pool to keep backend execution async.
 // This mirrors the CPU backend model but is local to the Vulkan backend
