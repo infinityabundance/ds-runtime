@@ -191,6 +191,186 @@ private:
     std::unordered_map<std::string, ShaderModule> cache_;
 };
 
+// Descriptor set layout for compute shaders.
+// Defines the bindings used by a compute pipeline.
+struct DescriptorLayoutInfo {
+    std::vector<VkDescriptorSetLayoutBinding> bindings;
+    VkDescriptorSetLayout layout = VK_NULL_HANDLE;
+    
+    // Create the Vulkan descriptor set layout from bindings
+    void create(VkDevice device) {
+        if (layout != VK_NULL_HANDLE) {
+            return;  // Already created
+        }
+        
+        VkDescriptorSetLayoutCreateInfo layout_info{};
+        layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        layout_info.bindingCount = static_cast<uint32_t>(bindings.size());
+        layout_info.pBindings = bindings.data();
+        
+        VkResult result = vkCreateDescriptorSetLayout(device, &layout_info, nullptr, &layout);
+        if (result != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create descriptor set layout (VkResult: " +
+                                   std::to_string(static_cast<int>(result)) + ")");
+        }
+    }
+    
+    // Destroy the layout
+    void destroy(VkDevice device) {
+        if (layout != VK_NULL_HANDLE) {
+            vkDestroyDescriptorSetLayout(device, layout, nullptr);
+            layout = VK_NULL_HANDLE;
+        }
+    }
+};
+
+// Factory functions to create common descriptor layouts
+namespace descriptor_layouts {
+
+// Layout for simple buffer copy: 2 storage buffers (input, output)
+inline DescriptorLayoutInfo create_buffer_copy_layout() {
+    DescriptorLayoutInfo info;
+    info.bindings.resize(2);
+    
+    // Binding 0: Input buffer (read-only)
+    info.bindings[0].binding = 0;
+    info.bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    info.bindings[0].descriptorCount = 1;
+    info.bindings[0].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    info.bindings[0].pImmutableSamplers = nullptr;
+    
+    // Binding 1: Output buffer (write-only)
+    info.bindings[1].binding = 1;
+    info.bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    info.bindings[1].descriptorCount = 1;
+    info.bindings[1].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    info.bindings[1].pImmutableSamplers = nullptr;
+    
+    return info;
+}
+
+// Layout for decompression: 3 storage buffers (compressed, metadata, decompressed)
+inline DescriptorLayoutInfo create_decompression_layout() {
+    DescriptorLayoutInfo info;
+    info.bindings.resize(3);
+    
+    // Binding 0: Compressed input buffer
+    info.bindings[0].binding = 0;
+    info.bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    info.bindings[0].descriptorCount = 1;
+    info.bindings[0].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    info.bindings[0].pImmutableSamplers = nullptr;
+    
+    // Binding 1: Metadata buffer (block info)
+    info.bindings[1].binding = 1;
+    info.bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    info.bindings[1].descriptorCount = 1;
+    info.bindings[1].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    info.bindings[1].pImmutableSamplers = nullptr;
+    
+    // Binding 2: Decompressed output buffer
+    info.bindings[2].binding = 2;
+    info.bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    info.bindings[2].descriptorCount = 1;
+    info.bindings[2].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    info.bindings[2].pImmutableSamplers = nullptr;
+    
+    return info;
+}
+
+} // namespace descriptor_layouts
+
+// Descriptor pool for allocating descriptor sets.
+// Pre-allocates a pool of descriptors that can be used by compute pipelines.
+class DescriptorPool {
+public:
+    explicit DescriptorPool(VkDevice device, uint32_t max_sets = 32)
+        : device_(device), pool_(VK_NULL_HANDLE)
+    {
+        // Size the pool for storage buffers (most common for compute)
+        // Each set needs up to 3 storage buffers (for decompression layout)
+        VkDescriptorPoolSize pool_size{};
+        pool_size.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        pool_size.descriptorCount = max_sets * 3;  // 3 buffers per set max
+        
+        VkDescriptorPoolCreateInfo pool_info{};
+        pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        pool_info.poolSizeCount = 1;
+        pool_info.pPoolSizes = &pool_size;
+        pool_info.maxSets = max_sets;
+        pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+        
+        VkResult result = vkCreateDescriptorPool(device_, &pool_info, nullptr, &pool_);
+        if (result != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create descriptor pool (VkResult: " +
+                                   std::to_string(static_cast<int>(result)) + ")");
+        }
+    }
+    
+    ~DescriptorPool() {
+        if (pool_ != VK_NULL_HANDLE) {
+            vkDestroyDescriptorPool(device_, pool_, nullptr);
+        }
+    }
+    
+    // Delete copy operations
+    DescriptorPool(const DescriptorPool&) = delete;
+    DescriptorPool& operator=(const DescriptorPool&) = delete;
+    
+    // Allow move operations
+    DescriptorPool(DescriptorPool&& other) noexcept
+        : device_(other.device_), pool_(other.pool_)
+    {
+        other.pool_ = VK_NULL_HANDLE;
+    }
+    
+    DescriptorPool& operator=(DescriptorPool&& other) noexcept {
+        if (this != &other) {
+            if (pool_ != VK_NULL_HANDLE) {
+                vkDestroyDescriptorPool(device_, pool_, nullptr);
+            }
+            device_ = other.device_;
+            pool_ = other.pool_;
+            other.pool_ = VK_NULL_HANDLE;
+        }
+        return *this;
+    }
+    
+    // Allocate a descriptor set from this pool
+    VkDescriptorSet allocate(VkDescriptorSetLayout layout) {
+        VkDescriptorSetAllocateInfo alloc_info{};
+        alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        alloc_info.descriptorPool = pool_;
+        alloc_info.descriptorSetCount = 1;
+        alloc_info.pSetLayouts = &layout;
+        
+        VkDescriptorSet descriptor_set;
+        VkResult result = vkAllocateDescriptorSets(device_, &alloc_info, &descriptor_set);
+        if (result != VK_SUCCESS) {
+            throw std::runtime_error("Failed to allocate descriptor set (VkResult: " +
+                                   std::to_string(static_cast<int>(result)) + ")");
+        }
+        
+        return descriptor_set;
+    }
+    
+    // Free a descriptor set back to the pool
+    void free(VkDescriptorSet descriptor_set) {
+        vkFreeDescriptorSets(device_, pool_, 1, &descriptor_set);
+    }
+    
+    // Reset the entire pool (frees all allocated sets)
+    void reset() {
+        vkResetDescriptorPool(device_, pool_, 0);
+    }
+    
+    VkDescriptorPool get() const { return pool_; }
+
+private:
+    VkDevice device_;
+    VkDescriptorPool pool_;
+};
+
 // Simple fixed-size thread pool to keep backend execution async.
 // This mirrors the CPU backend model but is local to the Vulkan backend
 // to keep responsibilities self-contained.

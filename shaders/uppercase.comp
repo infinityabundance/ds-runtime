@@ -1,0 +1,36 @@
+# Shader for uppercase ASCII transformation
+# Demonstrates data processing on GPU
+
+#version 450
+
+layout(local_size_x = 256) in;
+
+# Input buffer (raw bytes as uint8)
+layout(binding = 0) readonly buffer InputBuffer {
+    uint8_t data[];
+} input_buf;
+
+# Output buffer (transformed bytes)
+layout(binding = 1) writeonly buffer OutputBuffer {
+    uint8_t data[];
+} output_buf;
+
+# Push constants
+layout(push_constant) uniform PushConstants {
+    uint byte_count;
+} push;
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    
+    if (idx < push.byte_count) {
+        uint8_t c = input_buf.data[idx];
+        
+        // Convert lowercase ASCII to uppercase (a-z -> A-Z)
+        if (c >= uint8_t('a') && c <= uint8_t('z')) {
+            c = c - uint8_t(32);
+        }
+        
+        output_buf.data[idx] = c;
+    }
+}
