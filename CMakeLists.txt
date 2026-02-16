@@ -206,9 +206,20 @@ if (DS_BUILD_TESTS)
         target_link_libraries(ds_gdeflate_stub_test PRIVATE ds_runtime_static)
     endif()
 
+    # Comprehensive CPU backend test
+    add_executable(ds_cpu_backend_test
+        tests/cpu_backend_test.cpp
+    )
+    if (TARGET ds_runtime)
+        target_link_libraries(ds_cpu_backend_test PRIVATE ds_runtime)
+    elseif (TARGET ds_runtime_static)
+        target_link_libraries(ds_cpu_backend_test PRIVATE ds_runtime_static)
+    endif()
+
     enable_testing()
     add_test(NAME ds_runtime_tests COMMAND ds_runtime_tests)
     add_test(NAME ds_gdeflate_stub_test COMMAND ds_gdeflate_stub_test)
+    add_test(NAME ds_cpu_backend_test COMMAND ds_cpu_backend_test)
 
     if (LIBURING_FOUND)
         add_executable(ds_io_uring_tests
