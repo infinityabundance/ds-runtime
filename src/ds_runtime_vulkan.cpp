@@ -12,7 +12,9 @@
 #include <mutex>
 #include <queue>
 #include <stdexcept>
+#include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 #include <fcntl.h>
@@ -66,6 +68,128 @@ std::vector<uint32_t> load_spirv_from_file(const std::string& path) {
 
     return spirv;
 }
+
+// Wrapper for VkShaderModule with RAII lifecycle management.
+class ShaderModule {
+public:
+    // Create a shader module from SPIR-V bytecode.
+    // Throws std::runtime_error if creation fails.
+    ShaderModule(VkDevice device, const std::vector<uint32_t>& spirv_code)
+        : device_(device), module_(VK_NULL_HANDLE)
+    {
+        if (device == VK_NULL_HANDLE) {
+            throw std::runtime_error("Invalid VkDevice for shader module creation");
+        }
+
+        if (spirv_code.empty()) {
+            throw std::runtime_error("Empty SPIR-V code");
+        }
+
+        VkShaderModuleCreateInfo create_info{};
+        create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        create_info.codeSize = spirv_code.size() * sizeof(uint32_t);
+        create_info.pCode = spirv_code.data();
+
+        VkResult result = vkCreateShaderModule(device_, &create_info, nullptr, &module_);
+        if (result != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create VkShaderModule (VkResult: " + 
+                                   std::to_string(static_cast<int>(result)) + ")");
+        }
+    }
+
+    // Destructor cleans up the Vulkan shader module.
+    ~ShaderModule() {
+        if (module_ != VK_NULL_HANDLE && device_ != VK_NULL_HANDLE) {
+            vkDestroyShaderModule(device_, module_, nullptr);
+        }
+    }
+
+    // Delete copy operations (shader modules should not be copied)
+    ShaderModule(const ShaderModule&) = delete;
+    ShaderModule& operator=(const ShaderModule&) = delete;
+
+    // Allow move operations
+    ShaderModule(ShaderModule&& other) noexcept
+        : device_(other.device_), module_(other.module_)
+    {
+        other.module_ = VK_NULL_HANDLE;
+        other.device_ = VK_NULL_HANDLE;
+    }
+
+    ShaderModule& operator=(ShaderModule&& other) noexcept {
+        if (this != &other) {
+            // Clean up our current module
+            if (module_ != VK_NULL_HANDLE && device_ != VK_NULL_HANDLE) {
+                vkDestroyShaderModule(device_, module_, nullptr);
+            }
+            
+            // Take ownership of other's module
+            device_ = other.device_;
+            module_ = other.module_;
+            other.module_ = VK_NULL_HANDLE;
+            other.device_ = VK_NULL_HANDLE;
+        }
+        return *this;
+    }
+
+    // Get the underlying VkShaderModule handle.
+    VkShaderModule get() const { return module_; }
+
+    // Check if the module is valid.
+    bool is_valid() const { return module_ != VK_NULL_HANDLE; }
+
+private:
+    VkDevice device_;
+    VkShaderModule module_;
+};
+
+// Cache for shader modules to avoid reloading/recompiling the same shaders.
+// Maps shader file paths to loaded shader modules.
+class ShaderModuleCache {
+public:
+    explicit ShaderModuleCache(VkDevice device) : device_(device) {}
+
+    // Load a shader from file, returning a cached module if already loaded.
+    // Throws std::runtime_error if the shader cannot be loaded.
+    VkShaderModule load_shader(const std::string& path) {
+        // Check if already cached
+        auto it = cache_.find(path);
+        if (it != cache_.end()) {
+            return it->second.get();
+        }
+
+        // Load SPIR-V from file
+        std::vector<uint32_t> spirv = load_spirv_from_file(path);
+
+        // Create shader module
+        ShaderModule module(device_, spirv);
+
+        // Cache it (move into cache)
+        VkShaderModule handle = module.get();
+        cache_.emplace(path, std::move(module));
+
+        return handle;
+    }
+
+    // Clear all cached shader modules.
+    void clear() {
+        cache_.clear();
+    }
+
+    // Get number of cached shaders.
+    std::size_t size() const {
+        return cache_.size();
+    }
+
+    // Check if a shader is cached.
+    bool has_shader(const std::string& path) const {
+        return cache_.find(path) != cache_.end();
+    }
+
+private:
+    VkDevice device_;
+    std::unordered_map<std::string, ShaderModule> cache_;
+};
 
 // Simple fixed-size thread pool to keep backend execution async.
 // This mirrors the CPU backend model but is local to the Vulkan backend
