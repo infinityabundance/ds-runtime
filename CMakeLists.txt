@@ -274,6 +274,17 @@ if (DS_BUILD_TESTS)
     add_test(NAME ds_cpu_backend_test COMMAND ds_cpu_backend_test)
     add_test(NAME ds_error_handling_test COMMAND ds_error_handling_test)
 
+    # GDeflate format test
+    add_executable(ds_gdeflate_format_test
+        tests/gdeflate_format_test.cpp
+    )
+    if (TARGET ds_runtime)
+        target_link_libraries(ds_gdeflate_format_test PRIVATE ds_runtime)
+    elseif (TARGET ds_runtime_static)
+        target_link_libraries(ds_gdeflate_format_test PRIVATE ds_runtime_static)
+    endif()
+    add_test(NAME ds_gdeflate_format_test COMMAND ds_gdeflate_format_test)
+
     if (LIBURING_FOUND)
         add_executable(ds_io_uring_tests
             tests/io_uring_backend_test.cpp
