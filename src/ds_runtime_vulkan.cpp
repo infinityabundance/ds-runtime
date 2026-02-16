@@ -9,6 +9,7 @@
 #include <cstring>
 #include <fstream>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <queue>
 #include <stdexcept>
@@ -456,6 +457,227 @@ inline void update_decompression_buffers(VkDevice device,
 }
 
 } // namespace descriptor_updates
+
+// Pipeline layout wrapper with RAII lifecycle management.
+// Combines descriptor set layouts and push constants.
+class PipelineLayout {
+public:
+    // Create pipeline layout from descriptor layouts and optional push constants
+    PipelineLayout(VkDevice device,
+                  const std::vector<VkDescriptorSetLayout>& descriptor_layouts,
+                  const std::vector<VkPushConstantRange>& push_constant_ranges = {})
+        : device_(device), layout_(VK_NULL_HANDLE)
+    {
+        VkPipelineLayoutCreateInfo layout_info{};
+        layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        layout_info.setLayoutCount = static_cast<uint32_t>(descriptor_layouts.size());
+        layout_info.pSetLayouts = descriptor_layouts.data();
+        layout_info.pushConstantRangeCount = static_cast<uint32_t>(push_constant_ranges.size());
+        layout_info.pPushConstantRanges = push_constant_ranges.empty() ? nullptr : push_constant_ranges.data();
+        
+        VkResult result = vkCreatePipelineLayout(device_, &layout_info, nullptr, &layout_);
+        if (result != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create pipeline layout (VkResult: " +
+                                   std::to_string(static_cast<int>(result)) + ")");
+        }
+    }
+    
+    ~PipelineLayout() {
+        if (layout_ != VK_NULL_HANDLE && device_ != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(device_, layout_, nullptr);
+        }
+    }
+    
+    // Delete copy operations
+    PipelineLayout(const PipelineLayout&) = delete;
+    PipelineLayout& operator=(const PipelineLayout&) = delete;
+    
+    // Allow move operations
+    PipelineLayout(PipelineLayout&& other) noexcept
+        : device_(other.device_), layout_(other.layout_)
+    {
+        other.layout_ = VK_NULL_HANDLE;
+        other.device_ = VK_NULL_HANDLE;
+    }
+    
+    PipelineLayout& operator=(PipelineLayout&& other) noexcept {
+        if (this != &other) {
+            if (layout_ != VK_NULL_HANDLE && device_ != VK_NULL_HANDLE) {
+                vkDestroyPipelineLayout(device_, layout_, nullptr);
+            }
+            device_ = other.device_;
+            layout_ = other.layout_;
+            other.layout_ = VK_NULL_HANDLE;
+            other.device_ = VK_NULL_HANDLE;
+        }
+        return *this;
+    }
+    
+    VkPipelineLayout get() const { return layout_; }
+    bool is_valid() const { return layout_ != VK_NULL_HANDLE; }
+
+private:
+    VkDevice device_;
+    VkPipelineLayout layout_;
+};
+
+// Helper to create common push constant ranges
+namespace push_constants {
+
+// Push constant range for compute shaders (typically for dispatch parameters)
+inline VkPushConstantRange create_compute_range(uint32_t size, uint32_t offset = 0) {
+    VkPushConstantRange range{};
+    range.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    range.offset = offset;
+    range.size = size;
+    return range;
+}
+
+// Common push constant for element count (single uint32)
+inline VkPushConstantRange create_element_count_range() {
+    return create_compute_range(sizeof(uint32_t), 0);
+}
+
+} // namespace push_constants
+
+// Compute pipeline wrapper with RAII lifecycle management.
+class ComputePipeline {
+public:
+    // Create compute pipeline from shader module and pipeline layout
+    ComputePipeline(VkDevice device,
+                   VkShaderModule shader_module,
+                   VkPipelineLayout pipeline_layout,
+                   const char* entry_point = "main",
+                   VkPipelineCache cache = VK_NULL_HANDLE)
+        : device_(device), pipeline_(VK_NULL_HANDLE)
+    {
+        // Shader stage info
+        VkPipelineShaderStageCreateInfo stage_info{};
+        stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        stage_info.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+        stage_info.module = shader_module;
+        stage_info.pName = entry_point;
+        
+        // Compute pipeline info
+        VkComputePipelineCreateInfo pipeline_info{};
+        pipeline_info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+        pipeline_info.stage = stage_info;
+        pipeline_info.layout = pipeline_layout;
+        
+        VkResult result = vkCreateComputePipelines(device_, cache, 1, &pipeline_info, nullptr, &pipeline_);
+        if (result != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create compute pipeline (VkResult: " +
+                                   std::to_string(static_cast<int>(result)) + ")");
+        }
+    }
+    
+    ~ComputePipeline() {
+        if (pipeline_ != VK_NULL_HANDLE && device_ != VK_NULL_HANDLE) {
+            vkDestroyPipeline(device_, pipeline_, nullptr);
+        }
+    }
+    
+    // Delete copy operations
+    ComputePipeline(const ComputePipeline&) = delete;
+    ComputePipeline& operator=(const ComputePipeline&) = delete;
+    
+    // Allow move operations
+    ComputePipeline(ComputePipeline&& other) noexcept
+        : device_(other.device_), pipeline_(other.pipeline_)
+    {
+        other.pipeline_ = VK_NULL_HANDLE;
+        other.device_ = VK_NULL_HANDLE;
+    }
+    
+    ComputePipeline& operator=(ComputePipeline&& other) noexcept {
+        if (this != &other) {
+            if (pipeline_ != VK_NULL_HANDLE && device_ != VK_NULL_HANDLE) {
+                vkDestroyPipeline(device_, pipeline_, nullptr);
+            }
+            device_ = other.device_;
+            pipeline_ = other.pipeline_;
+            other.pipeline_ = VK_NULL_HANDLE;
+            other.device_ = VK_NULL_HANDLE;
+        }
+        return *this;
+    }
+    
+    VkPipeline get() const { return pipeline_; }
+    bool is_valid() const { return pipeline_ != VK_NULL_HANDLE; }
+
+private:
+    VkDevice device_;
+    VkPipeline pipeline_;
+};
+
+// Complete pipeline bundle (layout + pipeline + descriptor layout)
+struct ComputePipelineBundle {
+    DescriptorLayoutInfo descriptor_layout;
+    std::unique_ptr<PipelineLayout> pipeline_layout;
+    std::unique_ptr<ComputePipeline> pipeline;
+    
+    // Check if bundle is complete and valid
+    bool is_valid() const {
+        return descriptor_layout.layout != VK_NULL_HANDLE &&
+               pipeline_layout && pipeline_layout->is_valid() &&
+               pipeline && pipeline->is_valid();
+    }
+};
+
+// Factory functions for creating complete pipeline bundles
+namespace pipeline_factory {
+
+// Create a buffer copy pipeline (2 storage buffers, 1 push constant for element count)
+inline ComputePipelineBundle create_buffer_copy_pipeline(
+    VkDevice device,
+    ShaderModuleCache& shader_cache,
+    const std::string& shader_path)
+{
+    ComputePipelineBundle bundle;
+    
+    // 1. Create descriptor layout
+    bundle.descriptor_layout = descriptor_layouts::create_buffer_copy_layout();
+    bundle.descriptor_layout.create(device);
+    
+    // 2. Create pipeline layout with push constants
+    std::vector<VkDescriptorSetLayout> desc_layouts = {bundle.descriptor_layout.layout};
+    std::vector<VkPushConstantRange> push_ranges = {push_constants::create_element_count_range()};
+    bundle.pipeline_layout = std::make_unique<PipelineLayout>(device, desc_layouts, push_ranges);
+    
+    // 3. Load shader and create pipeline
+    VkShaderModule shader = shader_cache.load_shader(shader_path);
+    bundle.pipeline = std::make_unique<ComputePipeline>(device, shader, bundle.pipeline_layout->get());
+    
+    return bundle;
+}
+
+// Create a decompression pipeline (3 storage buffers, push constants for parameters)
+inline ComputePipelineBundle create_decompression_pipeline(
+    VkDevice device,
+    ShaderModuleCache& shader_cache,
+    const std::string& shader_path)
+{
+    ComputePipelineBundle bundle;
+    
+    // 1. Create descriptor layout
+    bundle.descriptor_layout = descriptor_layouts::create_decompression_layout();
+    bundle.descriptor_layout.create(device);
+    
+    // 2. Create pipeline layout with push constants (4 uint32s for decompression params)
+    std::vector<VkDescriptorSetLayout> desc_layouts = {bundle.descriptor_layout.layout};
+    std::vector<VkPushConstantRange> push_ranges = {
+        push_constants::create_compute_range(sizeof(uint32_t) * 4, 0)
+    };
+    bundle.pipeline_layout = std::make_unique<PipelineLayout>(device, desc_layouts, push_ranges);
+    
+    // 3. Load shader and create pipeline
+    VkShaderModule shader = shader_cache.load_shader(shader_path);
+    bundle.pipeline = std::make_unique<ComputePipeline>(device, shader, bundle.pipeline_layout->get());
+    
+    return bundle;
+}
+
+} // namespace pipeline_factory
 
 // Simple fixed-size thread pool to keep backend execution async.
 // This mirrors the CPU backend model but is local to the Vulkan backend
