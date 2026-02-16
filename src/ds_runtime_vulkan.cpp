@@ -679,6 +679,149 @@ inline ComputePipelineBundle create_decompression_pipeline(
 
 } // namespace pipeline_factory
 
+// Command buffer recording helpers for compute dispatches
+namespace compute_dispatch {
+
+// Helper to record compute dispatch commands into a command buffer
+struct DispatchInfo {
+    VkPipeline pipeline;
+    VkPipelineLayout pipeline_layout;
+    VkDescriptorSet descriptor_set;
+    uint32_t workgroup_count_x;
+    uint32_t workgroup_count_y = 1;
+    uint32_t workgroup_count_z = 1;
+    const void* push_constants_data = nullptr;
+    uint32_t push_constants_size = 0;
+    uint32_t push_constants_offset = 0;
+};
+
+// Record compute dispatch commands into a command buffer
+inline void record_compute_dispatch(VkCommandBuffer cmd, const DispatchInfo& info) {
+    // Bind compute pipeline
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, info.pipeline);
+    
+    // Bind descriptor set
+    vkCmdBindDescriptorSets(
+        cmd,
+        VK_PIPELINE_BIND_POINT_COMPUTE,
+        info.pipeline_layout,
+        0,  // first set
+        1,  // descriptor set count
+        &info.descriptor_set,
+        0,  // dynamic offset count
+        nullptr
+    );
+    
+    // Push constants (if provided)
+    if (info.push_constants_data && info.push_constants_size > 0) {
+        vkCmdPushConstants(
+            cmd,
+            info.pipeline_layout,
+            VK_SHADER_STAGE_COMPUTE_BIT,
+            info.push_constants_offset,
+            info.push_constants_size,
+            info.push_constants_data
+        );
+    }
+    
+    // Dispatch compute work
+    vkCmdDispatch(cmd, info.workgroup_count_x, info.workgroup_count_y, info.workgroup_count_z);
+}
+
+// Calculate workgroup count for 1D data (e.g., buffer processing)
+inline uint32_t calculate_workgroup_count_1d(uint32_t element_count, uint32_t workgroup_size) {
+    return (element_count + workgroup_size - 1) / workgroup_size;
+}
+
+// Memory barrier helpers for synchronization
+struct MemoryBarrierInfo {
+    VkAccessFlags src_access_mask;
+    VkAccessFlags dst_access_mask;
+    VkBuffer buffer;
+    VkDeviceSize offset;
+    VkDeviceSize size;
+};
+
+// Insert buffer memory barrier
+inline void insert_buffer_barrier(VkCommandBuffer cmd,
+                                  VkPipelineStageFlags src_stage,
+                                  VkPipelineStageFlags dst_stage,
+                                  const MemoryBarrierInfo& info)
+{
+    VkBufferMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    barrier.srcAccessMask = info.src_access_mask;
+    barrier.dstAccessMask = info.dst_access_mask;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.buffer = info.buffer;
+    barrier.offset = info.offset;
+    barrier.size = info.size;
+    
+    vkCmdPipelineBarrier(
+        cmd,
+        src_stage,
+        dst_stage,
+        0,  // dependency flags
+        0, nullptr,  // memory barriers
+        1, &barrier,  // buffer memory barriers
+        0, nullptr   // image memory barriers
+    );
+}
+
+// Barrier: Transfer Write → Compute Read (after staging buffer copy, before compute)
+inline void barrier_transfer_to_compute(VkCommandBuffer cmd, VkBuffer buffer, VkDeviceSize size) {
+    MemoryBarrierInfo info;
+    info.src_access_mask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    info.dst_access_mask = VK_ACCESS_SHADER_READ_BIT;
+    info.buffer = buffer;
+    info.offset = 0;
+    info.size = size;
+    
+    insert_buffer_barrier(
+        cmd,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        info
+    );
+}
+
+// Barrier: Compute Write → Transfer Read (after compute, before readback)
+inline void barrier_compute_to_transfer(VkCommandBuffer cmd, VkBuffer buffer, VkDeviceSize size) {
+    MemoryBarrierInfo info;
+    info.src_access_mask = VK_ACCESS_SHADER_WRITE_BIT;
+    info.dst_access_mask = VK_ACCESS_TRANSFER_READ_BIT;
+    info.buffer = buffer;
+    info.offset = 0;
+    info.size = size;
+    
+    insert_buffer_barrier(
+        cmd,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        info
+    );
+}
+
+// Barrier: Compute Write → Compute Read (between dependent compute passes)
+inline void barrier_compute_to_compute(VkCommandBuffer cmd, VkBuffer buffer, VkDeviceSize size) {
+    MemoryBarrierInfo info;
+    info.src_access_mask = VK_ACCESS_SHADER_WRITE_BIT;
+    info.dst_access_mask = VK_ACCESS_SHADER_READ_BIT;
+    info.buffer = buffer;
+    info.offset = 0;
+    info.size = size;
+    
+    insert_buffer_barrier(
+        cmd,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        info
+    );
+}
+
+} // namespace compute_dispatch
+
 // Simple fixed-size thread pool to keep backend execution async.
 // This mirrors the CPU backend model but is local to the Vulkan backend
 // to keep responsibilities self-contained.
