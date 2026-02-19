@@ -1,0 +1,19 @@
+#version 450
+layout(local_size_x = 16) in;
+
+// We treat the buffer as an array of 32-bit words.
+// 16 words * 4 bytes = 64 bytes total.
+layout(binding = 0) buffer SrcBuf {
+    uint src[];
+};
+
+layout(binding = 1) buffer DstBuf {
+    uint dst[];
+};
+
+void main() {
+    uint idx = gl_GlobalInvocationID.x;
+    if (idx < 16) {
+        dst[idx] = src[idx];
+    }
+}

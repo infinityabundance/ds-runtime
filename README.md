@@ -82,6 +82,16 @@ The codebase has been significantly improved:
 - ⚠️ **io_uring backend**: Requires liburing dependency (not built by default)
 - ⚠️ **Request cancellation**: Enum added but cancel() method not yet implemented
 
+### 📋 Investigation & Planning Complete (Phase 0)
+Comprehensive investigation and planning documents have been created:
+- **[Master Roadmap](docs/master_roadmap.md)** (30KB) - Complete 36-week phased plan with microtasks
+- **[GDeflate Investigation](docs/investigation_gdeflate.md)** (16KB) - CPU & GPU implementation plan
+- **[Vulkan Compute Investigation](docs/investigation_vulkan_compute.md)** (26KB) - GPU compute pipelines
+- **[io_uring Investigation](docs/investigation_io_uring.md)** (20KB) - Multi-worker backend enhancement
+- **[Additional Features](docs/investigation_remaining_features.md)** (18KB) - Cancellation, GPU workflows, Wine/Proton
+
+Timeline: 36 weeks for full implementation, 12 weeks for MVP
+
 See [MISSING_FEATURES.md](MISSING_FEATURES.md) for the complete roadmap and [COMPARISON.md](COMPARISON.md) for documentation vs reality comparison.
 
 ---

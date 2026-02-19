@@ -73,6 +73,48 @@ if (PkgConfig_FOUND)
 endif()
 
 # ============================================================
+# Shader compilation
+#
+# If glslangValidator is available, compile compute shaders
+# from GLSL to SPIR-V automatically during the build.
+# ============================================================
+
+find_program(GLSLANG_VALIDATOR glslangValidator)
+
+if(GLSLANG_VALIDATOR)
+    message(STATUS "Found glslangValidator: ${GLSLANG_VALIDATOR}")
+    
+    # Find all .comp shader files
+    file(GLOB SHADER_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/shaders/*.comp)
+    
+    set(SPIRV_SHADERS)
+    foreach(SHADER ${SHADER_SOURCES})
+        get_filename_component(SHADER_NAME ${SHADER} NAME)
+        set(SPIRV "${CMAKE_CURRENT_BINARY_DIR}/shaders/${SHADER_NAME}.spv")
+        
+        add_custom_command(
+            OUTPUT ${SPIRV}
+            COMMAND ${CMAKE_COMMAND} -E make_directory 
+                    "${CMAKE_CURRENT_BINARY_DIR}/shaders"
+            COMMAND ${GLSLANG_VALIDATOR} -V ${SHADER} -o ${SPIRV}
+            DEPENDS ${SHADER}
+            COMMENT "Compiling shader ${SHADER_NAME} to SPIR-V"
+            VERBATIM
+        )
+        
+        list(APPEND SPIRV_SHADERS ${SPIRV})
+    endforeach()
+    
+    if(SPIRV_SHADERS)
+        add_custom_target(shaders ALL DEPENDS ${SPIRV_SHADERS})
+        message(STATUS "Shader compilation enabled (${list_length} shaders found)")
+    endif()
+else()
+    message(STATUS "glslangValidator not found - shader compilation disabled")
+    message(STATUS "  To enable: install vulkan-tools or spirv-tools package")
+endif()
+
+# ============================================================
 # Core runtime library
 #
 # ds_runtime is the main library target providing the public
@@ -231,6 +273,17 @@ if (DS_BUILD_TESTS)
     add_test(NAME ds_gdeflate_stub_test COMMAND ds_gdeflate_stub_test)
     add_test(NAME ds_cpu_backend_test COMMAND ds_cpu_backend_test)
     add_test(NAME ds_error_handling_test COMMAND ds_error_handling_test)
+
+    # GDeflate format test
+    add_executable(ds_gdeflate_format_test
+        tests/gdeflate_format_test.cpp
+    )
+    if (TARGET ds_runtime)
+        target_link_libraries(ds_gdeflate_format_test PRIVATE ds_runtime)
+    elseif (TARGET ds_runtime_static)
+        target_link_libraries(ds_gdeflate_format_test PRIVATE ds_runtime_static)
+    endif()
+    add_test(NAME ds_gdeflate_format_test COMMAND ds_gdeflate_format_test)
 
     if (LIBURING_FOUND)
         add_executable(ds_io_uring_tests

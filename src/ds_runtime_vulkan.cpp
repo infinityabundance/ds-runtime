@@ -7,10 +7,15 @@
 #include <cerrno>
 #include <condition_variable>
 #include <cstring>
+#include <fstream>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <queue>
+#include <stdexcept>
+#include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 #include <fcntl.h>
@@ -19,6 +24,803 @@
 namespace ds {
 
 namespace {
+
+// Load SPIR-V bytecode from a file.
+// Returns the bytecode as a vector of uint32_t words.
+// Throws std::runtime_error if the file cannot be read or is invalid.
+std::vector<uint32_t> load_spirv_from_file(const std::string& path) {
+    // Open file in binary mode, seek to end to get size
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file) {
+        throw std::runtime_error("Failed to open SPIR-V file: " + path);
+    }
+
+    // Get file size
+    std::streamsize size = file.tellg();
+    if (size <= 0) {
+        throw std::runtime_error("SPIR-V file is empty: " + path);
+    }
+
+    // SPIR-V must be a multiple of 4 bytes (32-bit words)
+    if (size % 4 != 0) {
+        throw std::runtime_error("SPIR-V file size is not a multiple of 4 bytes: " + path);
+    }
+
+    // Seek back to beginning
+    file.seekg(0, std::ios::beg);
+
+    // Read the file into a buffer
+    std::vector<char> buffer(static_cast<std::size_t>(size));
+    if (!file.read(buffer.data(), size)) {
+        throw std::runtime_error("Failed to read SPIR-V file: " + path);
+    }
+
+    // Validate SPIR-V magic number (0x07230203 in little-endian)
+    if (buffer.size() >= 4) {
+        uint32_t magic = *reinterpret_cast<const uint32_t*>(buffer.data());
+        if (magic != 0x07230203) {
+            throw std::runtime_error("Invalid SPIR-V magic number in file: " + path);
+        }
+    }
+
+    // Convert to uint32_t vector
+    std::vector<uint32_t> spirv(buffer.size() / 4);
+    std::memcpy(spirv.data(), buffer.data(), buffer.size());
+
+    return spirv;
+}
+
+// Wrapper for VkShaderModule with RAII lifecycle management.
+class ShaderModule {
+public:
+    // Create a shader module from SPIR-V bytecode.
+    // Throws std::runtime_error if creation fails.
+    ShaderModule(VkDevice device, const std::vector<uint32_t>& spirv_code)
+        : device_(device), module_(VK_NULL_HANDLE)
+    {
+        if (device == VK_NULL_HANDLE) {
+            throw std::runtime_error("Invalid VkDevice for shader module creation");
+        }
+
+        if (spirv_code.empty()) {
+            throw std::runtime_error("Empty SPIR-V code");
+        }
+
+        VkShaderModuleCreateInfo create_info{};
+        create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        create_info.codeSize = spirv_code.size() * sizeof(uint32_t);
+        create_info.pCode = spirv_code.data();
+
+        VkResult result = vkCreateShaderModule(device_, &create_info, nullptr, &module_);
+        if (result != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create VkShaderModule (VkResult: " + 
+                                   std::to_string(static_cast<int>(result)) + ")");
+        }
+    }
+
+    // Destructor cleans up the Vulkan shader module.
+    ~ShaderModule() {
+        if (module_ != VK_NULL_HANDLE && device_ != VK_NULL_HANDLE) {
+            vkDestroyShaderModule(device_, module_, nullptr);
+        }
+    }
+
+    // Delete copy operations (shader modules should not be copied)
+    ShaderModule(const ShaderModule&) = delete;
+    ShaderModule& operator=(const ShaderModule&) = delete;
+
+    // Allow move operations
+    ShaderModule(ShaderModule&& other) noexcept
+        : device_(other.device_), module_(other.module_)
+    {
+        other.module_ = VK_NULL_HANDLE;
+        other.device_ = VK_NULL_HANDLE;
+    }
+
+    ShaderModule& operator=(ShaderModule&& other) noexcept {
+        if (this != &other) {
+            // Clean up our current module
+            if (module_ != VK_NULL_HANDLE && device_ != VK_NULL_HANDLE) {
+                vkDestroyShaderModule(device_, module_, nullptr);
+            }
+            
+            // Take ownership of other's module
+            device_ = other.device_;
+            module_ = other.module_;
+            other.module_ = VK_NULL_HANDLE;
+            other.device_ = VK_NULL_HANDLE;
+        }
+        return *this;
+    }
+
+    // Get the underlying VkShaderModule handle.
+    VkShaderModule get() const { return module_; }
+
+    // Check if the module is valid.
+    bool is_valid() const { return module_ != VK_NULL_HANDLE; }
+
+private:
+    VkDevice device_;
+    VkShaderModule module_;
+};
+
+// Cache for shader modules to avoid reloading/recompiling the same shaders.
+// Maps shader file paths to loaded shader modules.
+class ShaderModuleCache {
+public:
+    explicit ShaderModuleCache(VkDevice device) : device_(device) {}
+
+    // Load a shader from file, returning a cached module if already loaded.
+    // Throws std::runtime_error if the shader cannot be loaded.
+    VkShaderModule load_shader(const std::string& path) {
+        // Check if already cached
+        auto it = cache_.find(path);
+        if (it != cache_.end()) {
+            return it->second.get();
+        }
+
+        // Load SPIR-V from file
+        std::vector<uint32_t> spirv = load_spirv_from_file(path);
+
+        // Create shader module
+        ShaderModule module(device_, spirv);
+
+        // Cache it (move into cache)
+        VkShaderModule handle = module.get();
+        cache_.emplace(path, std::move(module));
+
+        return handle;
+    }
+
+    // Clear all cached shader modules.
+    void clear() {
+        cache_.clear();
+    }
+
+    // Get number of cached shaders.
+    std::size_t size() const {
+        return cache_.size();
+    }
+
+    // Check if a shader is cached.
+    bool has_shader(const std::string& path) const {
+        return cache_.find(path) != cache_.end();
+    }
+
+private:
+    VkDevice device_;
+    std::unordered_map<std::string, ShaderModule> cache_;
+};
+
+// Descriptor set layout for compute shaders.
+// Defines the bindings used by a compute pipeline.
+struct DescriptorLayoutInfo {
+    std::vector<VkDescriptorSetLayoutBinding> bindings;
+    VkDescriptorSetLayout layout = VK_NULL_HANDLE;
+    
+    // Create the Vulkan descriptor set layout from bindings
+    void create(VkDevice device) {
+        if (layout != VK_NULL_HANDLE) {
+            return;  // Already created
+        }
+        
+        VkDescriptorSetLayoutCreateInfo layout_info{};
+        layout_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+        layout_info.bindingCount = static_cast<uint32_t>(bindings.size());
+        layout_info.pBindings = bindings.data();
+        
+        VkResult result = vkCreateDescriptorSetLayout(device, &layout_info, nullptr, &layout);
+        if (result != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create descriptor set layout (VkResult: " +
+                                   std::to_string(static_cast<int>(result)) + ")");
+        }
+    }
+    
+    // Destroy the layout
+    void destroy(VkDevice device) {
+        if (layout != VK_NULL_HANDLE) {
+            vkDestroyDescriptorSetLayout(device, layout, nullptr);
+            layout = VK_NULL_HANDLE;
+        }
+    }
+};
+
+// Factory functions to create common descriptor layouts
+namespace descriptor_layouts {
+
+// Layout for simple buffer copy: 2 storage buffers (input, output)
+inline DescriptorLayoutInfo create_buffer_copy_layout() {
+    DescriptorLayoutInfo info;
+    info.bindings.resize(2);
+    
+    // Binding 0: Input buffer (read-only)
+    info.bindings[0].binding = 0;
+    info.bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    info.bindings[0].descriptorCount = 1;
+    info.bindings[0].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    info.bindings[0].pImmutableSamplers = nullptr;
+    
+    // Binding 1: Output buffer (write-only)
+    info.bindings[1].binding = 1;
+    info.bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    info.bindings[1].descriptorCount = 1;
+    info.bindings[1].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    info.bindings[1].pImmutableSamplers = nullptr;
+    
+    return info;
+}
+
+// Layout for decompression: 3 storage buffers (compressed, metadata, decompressed)
+inline DescriptorLayoutInfo create_decompression_layout() {
+    DescriptorLayoutInfo info;
+    info.bindings.resize(3);
+    
+    // Binding 0: Compressed input buffer
+    info.bindings[0].binding = 0;
+    info.bindings[0].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    info.bindings[0].descriptorCount = 1;
+    info.bindings[0].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    info.bindings[0].pImmutableSamplers = nullptr;
+    
+    // Binding 1: Metadata buffer (block info)
+    info.bindings[1].binding = 1;
+    info.bindings[1].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    info.bindings[1].descriptorCount = 1;
+    info.bindings[1].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    info.bindings[1].pImmutableSamplers = nullptr;
+    
+    // Binding 2: Decompressed output buffer
+    info.bindings[2].binding = 2;
+    info.bindings[2].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+    info.bindings[2].descriptorCount = 1;
+    info.bindings[2].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    info.bindings[2].pImmutableSamplers = nullptr;
+    
+    return info;
+}
+
+} // namespace descriptor_layouts
+
+// Descriptor pool for allocating descriptor sets.
+// Pre-allocates a pool of descriptors that can be used by compute pipelines.
+class DescriptorPool {
+public:
+    explicit DescriptorPool(VkDevice device, uint32_t max_sets = 32)
+        : device_(device), pool_(VK_NULL_HANDLE)
+    {
+        // Size the pool for storage buffers (most common for compute)
+        // Each set needs up to 3 storage buffers (for decompression layout)
+        VkDescriptorPoolSize pool_size{};
+        pool_size.type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        pool_size.descriptorCount = max_sets * 3;  // 3 buffers per set max
+        
+        VkDescriptorPoolCreateInfo pool_info{};
+        pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        pool_info.poolSizeCount = 1;
+        pool_info.pPoolSizes = &pool_size;
+        pool_info.maxSets = max_sets;
+        pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
+        
+        VkResult result = vkCreateDescriptorPool(device_, &pool_info, nullptr, &pool_);
+        if (result != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create descriptor pool (VkResult: " +
+                                   std::to_string(static_cast<int>(result)) + ")");
+        }
+    }
+    
+    ~DescriptorPool() {
+        if (pool_ != VK_NULL_HANDLE) {
+            vkDestroyDescriptorPool(device_, pool_, nullptr);
+        }
+    }
+    
+    // Delete copy operations
+    DescriptorPool(const DescriptorPool&) = delete;
+    DescriptorPool& operator=(const DescriptorPool&) = delete;
+    
+    // Allow move operations
+    DescriptorPool(DescriptorPool&& other) noexcept
+        : device_(other.device_), pool_(other.pool_)
+    {
+        other.pool_ = VK_NULL_HANDLE;
+    }
+    
+    DescriptorPool& operator=(DescriptorPool&& other) noexcept {
+        if (this != &other) {
+            if (pool_ != VK_NULL_HANDLE) {
+                vkDestroyDescriptorPool(device_, pool_, nullptr);
+            }
+            device_ = other.device_;
+            pool_ = other.pool_;
+            other.pool_ = VK_NULL_HANDLE;
+        }
+        return *this;
+    }
+    
+    // Allocate a descriptor set from this pool
+    VkDescriptorSet allocate(VkDescriptorSetLayout layout) {
+        VkDescriptorSetAllocateInfo alloc_info{};
+        alloc_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        alloc_info.descriptorPool = pool_;
+        alloc_info.descriptorSetCount = 1;
+        alloc_info.pSetLayouts = &layout;
+        
+        VkDescriptorSet descriptor_set;
+        VkResult result = vkAllocateDescriptorSets(device_, &alloc_info, &descriptor_set);
+        if (result != VK_SUCCESS) {
+            throw std::runtime_error("Failed to allocate descriptor set (VkResult: " +
+                                   std::to_string(static_cast<int>(result)) + ")");
+        }
+        
+        return descriptor_set;
+    }
+    
+    // Free a descriptor set back to the pool
+    void free(VkDescriptorSet descriptor_set) {
+        vkFreeDescriptorSets(device_, pool_, 1, &descriptor_set);
+    }
+    
+    // Reset the entire pool (frees all allocated sets)
+    void reset() {
+        vkResetDescriptorPool(device_, pool_, 0);
+    }
+    
+    VkDescriptorPool get() const { return pool_; }
+
+private:
+    VkDevice device_;
+    VkDescriptorPool pool_;
+};
+
+// Helper functions for updating descriptor sets with buffer bindings.
+namespace descriptor_updates {
+
+// Update a descriptor set with buffer bindings.
+// Used to bind actual VkBuffer handles to descriptor set bindings.
+struct BufferBinding {
+    uint32_t binding;        // Binding index (matches shader layout)
+    VkBuffer buffer;         // Buffer to bind
+    VkDeviceSize offset;     // Offset into buffer
+    VkDeviceSize range;      // Size of buffer region (or VK_WHOLE_SIZE)
+};
+
+// Update descriptor set with storage buffer bindings.
+// Example: bind input and output buffers for compute shader.
+inline void update_storage_buffers(VkDevice device,
+                                   VkDescriptorSet descriptor_set,
+                                   const std::vector<BufferBinding>& bindings)
+{
+    std::vector<VkDescriptorBufferInfo> buffer_infos;
+    std::vector<VkWriteDescriptorSet> writes;
+    
+    buffer_infos.reserve(bindings.size());
+    writes.reserve(bindings.size());
+    
+    for (const auto& binding : bindings) {
+        // Create buffer info
+        VkDescriptorBufferInfo buffer_info{};
+        buffer_info.buffer = binding.buffer;
+        buffer_info.offset = binding.offset;
+        buffer_info.range = binding.range;
+        buffer_infos.push_back(buffer_info);
+        
+        // Create write descriptor
+        VkWriteDescriptorSet write{};
+        write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        write.dstSet = descriptor_set;
+        write.dstBinding = binding.binding;
+        write.dstArrayElement = 0;
+        write.descriptorCount = 1;
+        write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        write.pBufferInfo = &buffer_infos[writes.size()];
+        writes.push_back(write);
+    }
+    
+    // Update all bindings at once
+    vkUpdateDescriptorSets(device,
+                          static_cast<uint32_t>(writes.size()),
+                          writes.data(),
+                          0, nullptr);
+}
+
+// Convenience function for 2-buffer copy layout (input, output)
+inline void update_copy_buffers(VkDevice device,
+                               VkDescriptorSet descriptor_set,
+                               VkBuffer input_buffer,
+                               VkDeviceSize input_size,
+                               VkBuffer output_buffer,
+                               VkDeviceSize output_size)
+{
+    std::vector<BufferBinding> bindings = {
+        {0, input_buffer, 0, input_size},   // Binding 0: input
+        {1, output_buffer, 0, output_size}  // Binding 1: output
+    };
+    update_storage_buffers(device, descriptor_set, bindings);
+}
+
+// Convenience function for 3-buffer decompression layout
+inline void update_decompression_buffers(VkDevice device,
+                                        VkDescriptorSet descriptor_set,
+                                        VkBuffer compressed_buffer,
+                                        VkDeviceSize compressed_size,
+                                        VkBuffer metadata_buffer,
+                                        VkDeviceSize metadata_size,
+                                        VkBuffer decompressed_buffer,
+                                        VkDeviceSize decompressed_size)
+{
+    std::vector<BufferBinding> bindings = {
+        {0, compressed_buffer, 0, compressed_size},      // Binding 0: compressed
+        {1, metadata_buffer, 0, metadata_size},          // Binding 1: metadata
+        {2, decompressed_buffer, 0, decompressed_size}   // Binding 2: decompressed
+    };
+    update_storage_buffers(device, descriptor_set, bindings);
+}
+
+} // namespace descriptor_updates
+
+// Pipeline layout wrapper with RAII lifecycle management.
+// Combines descriptor set layouts and push constants.
+class PipelineLayout {
+public:
+    // Create pipeline layout from descriptor layouts and optional push constants
+    PipelineLayout(VkDevice device,
+                  const std::vector<VkDescriptorSetLayout>& descriptor_layouts,
+                  const std::vector<VkPushConstantRange>& push_constant_ranges = {})
+        : device_(device), layout_(VK_NULL_HANDLE)
+    {
+        VkPipelineLayoutCreateInfo layout_info{};
+        layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+        layout_info.setLayoutCount = static_cast<uint32_t>(descriptor_layouts.size());
+        layout_info.pSetLayouts = descriptor_layouts.data();
+        layout_info.pushConstantRangeCount = static_cast<uint32_t>(push_constant_ranges.size());
+        layout_info.pPushConstantRanges = push_constant_ranges.empty() ? nullptr : push_constant_ranges.data();
+        
+        VkResult result = vkCreatePipelineLayout(device_, &layout_info, nullptr, &layout_);
+        if (result != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create pipeline layout (VkResult: " +
+                                   std::to_string(static_cast<int>(result)) + ")");
+        }
+    }
+    
+    ~PipelineLayout() {
+        if (layout_ != VK_NULL_HANDLE && device_ != VK_NULL_HANDLE) {
+            vkDestroyPipelineLayout(device_, layout_, nullptr);
+        }
+    }
+    
+    // Delete copy operations
+    PipelineLayout(const PipelineLayout&) = delete;
+    PipelineLayout& operator=(const PipelineLayout&) = delete;
+    
+    // Allow move operations
+    PipelineLayout(PipelineLayout&& other) noexcept
+        : device_(other.device_), layout_(other.layout_)
+    {
+        other.layout_ = VK_NULL_HANDLE;
+        other.device_ = VK_NULL_HANDLE;
+    }
+    
+    PipelineLayout& operator=(PipelineLayout&& other) noexcept {
+        if (this != &other) {
+            if (layout_ != VK_NULL_HANDLE && device_ != VK_NULL_HANDLE) {
+                vkDestroyPipelineLayout(device_, layout_, nullptr);
+            }
+            device_ = other.device_;
+            layout_ = other.layout_;
+            other.layout_ = VK_NULL_HANDLE;
+            other.device_ = VK_NULL_HANDLE;
+        }
+        return *this;
+    }
+    
+    VkPipelineLayout get() const { return layout_; }
+    bool is_valid() const { return layout_ != VK_NULL_HANDLE; }
+
+private:
+    VkDevice device_;
+    VkPipelineLayout layout_;
+};
+
+// Helper to create common push constant ranges
+namespace push_constants {
+
+// Push constant range for compute shaders (typically for dispatch parameters)
+inline VkPushConstantRange create_compute_range(uint32_t size, uint32_t offset = 0) {
+    VkPushConstantRange range{};
+    range.stageFlags = VK_SHADER_STAGE_COMPUTE_BIT;
+    range.offset = offset;
+    range.size = size;
+    return range;
+}
+
+// Common push constant for element count (single uint32)
+inline VkPushConstantRange create_element_count_range() {
+    return create_compute_range(sizeof(uint32_t), 0);
+}
+
+} // namespace push_constants
+
+// Compute pipeline wrapper with RAII lifecycle management.
+class ComputePipeline {
+public:
+    // Create compute pipeline from shader module and pipeline layout
+    ComputePipeline(VkDevice device,
+                   VkShaderModule shader_module,
+                   VkPipelineLayout pipeline_layout,
+                   const char* entry_point = "main",
+                   VkPipelineCache cache = VK_NULL_HANDLE)
+        : device_(device), pipeline_(VK_NULL_HANDLE)
+    {
+        // Shader stage info
+        VkPipelineShaderStageCreateInfo stage_info{};
+        stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        stage_info.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+        stage_info.module = shader_module;
+        stage_info.pName = entry_point;
+        
+        // Compute pipeline info
+        VkComputePipelineCreateInfo pipeline_info{};
+        pipeline_info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+        pipeline_info.stage = stage_info;
+        pipeline_info.layout = pipeline_layout;
+        
+        VkResult result = vkCreateComputePipelines(device_, cache, 1, &pipeline_info, nullptr, &pipeline_);
+        if (result != VK_SUCCESS) {
+            throw std::runtime_error("Failed to create compute pipeline (VkResult: " +
+                                   std::to_string(static_cast<int>(result)) + ")");
+        }
+    }
+    
+    ~ComputePipeline() {
+        if (pipeline_ != VK_NULL_HANDLE && device_ != VK_NULL_HANDLE) {
+            vkDestroyPipeline(device_, pipeline_, nullptr);
+        }
+    }
+    
+    // Delete copy operations
+    ComputePipeline(const ComputePipeline&) = delete;
+    ComputePipeline& operator=(const ComputePipeline&) = delete;
+    
+    // Allow move operations
+    ComputePipeline(ComputePipeline&& other) noexcept
+        : device_(other.device_), pipeline_(other.pipeline_)
+    {
+        other.pipeline_ = VK_NULL_HANDLE;
+        other.device_ = VK_NULL_HANDLE;
+    }
+    
+    ComputePipeline& operator=(ComputePipeline&& other) noexcept {
+        if (this != &other) {
+            if (pipeline_ != VK_NULL_HANDLE && device_ != VK_NULL_HANDLE) {
+                vkDestroyPipeline(device_, pipeline_, nullptr);
+            }
+            device_ = other.device_;
+            pipeline_ = other.pipeline_;
+            other.pipeline_ = VK_NULL_HANDLE;
+            other.device_ = VK_NULL_HANDLE;
+        }
+        return *this;
+    }
+    
+    VkPipeline get() const { return pipeline_; }
+    bool is_valid() const { return pipeline_ != VK_NULL_HANDLE; }
+
+private:
+    VkDevice device_;
+    VkPipeline pipeline_;
+};
+
+// Complete pipeline bundle (layout + pipeline + descriptor layout)
+struct ComputePipelineBundle {
+    DescriptorLayoutInfo descriptor_layout;
+    std::unique_ptr<PipelineLayout> pipeline_layout;
+    std::unique_ptr<ComputePipeline> pipeline;
+    
+    // Check if bundle is complete and valid
+    bool is_valid() const {
+        return descriptor_layout.layout != VK_NULL_HANDLE &&
+               pipeline_layout && pipeline_layout->is_valid() &&
+               pipeline && pipeline->is_valid();
+    }
+};
+
+// Factory functions for creating complete pipeline bundles
+namespace pipeline_factory {
+
+// Create a buffer copy pipeline (2 storage buffers, 1 push constant for element count)
+inline ComputePipelineBundle create_buffer_copy_pipeline(
+    VkDevice device,
+    ShaderModuleCache& shader_cache,
+    const std::string& shader_path)
+{
+    ComputePipelineBundle bundle;
+    
+    // 1. Create descriptor layout
+    bundle.descriptor_layout = descriptor_layouts::create_buffer_copy_layout();
+    bundle.descriptor_layout.create(device);
+    
+    // 2. Create pipeline layout with push constants
+    std::vector<VkDescriptorSetLayout> desc_layouts = {bundle.descriptor_layout.layout};
+    std::vector<VkPushConstantRange> push_ranges = {push_constants::create_element_count_range()};
+    bundle.pipeline_layout = std::make_unique<PipelineLayout>(device, desc_layouts, push_ranges);
+    
+    // 3. Load shader and create pipeline
+    VkShaderModule shader = shader_cache.load_shader(shader_path);
+    bundle.pipeline = std::make_unique<ComputePipeline>(device, shader, bundle.pipeline_layout->get());
+    
+    return bundle;
+}
+
+// Create a decompression pipeline (3 storage buffers, push constants for parameters)
+inline ComputePipelineBundle create_decompression_pipeline(
+    VkDevice device,
+    ShaderModuleCache& shader_cache,
+    const std::string& shader_path)
+{
+    ComputePipelineBundle bundle;
+    
+    // 1. Create descriptor layout
+    bundle.descriptor_layout = descriptor_layouts::create_decompression_layout();
+    bundle.descriptor_layout.create(device);
+    
+    // 2. Create pipeline layout with push constants (4 uint32s for decompression params)
+    std::vector<VkDescriptorSetLayout> desc_layouts = {bundle.descriptor_layout.layout};
+    std::vector<VkPushConstantRange> push_ranges = {
+        push_constants::create_compute_range(sizeof(uint32_t) * 4, 0)
+    };
+    bundle.pipeline_layout = std::make_unique<PipelineLayout>(device, desc_layouts, push_ranges);
+    
+    // 3. Load shader and create pipeline
+    VkShaderModule shader = shader_cache.load_shader(shader_path);
+    bundle.pipeline = std::make_unique<ComputePipeline>(device, shader, bundle.pipeline_layout->get());
+    
+    return bundle;
+}
+
+} // namespace pipeline_factory
+
+// Command buffer recording helpers for compute dispatches
+namespace compute_dispatch {
+
+// Helper to record compute dispatch commands into a command buffer
+struct DispatchInfo {
+    VkPipeline pipeline;
+    VkPipelineLayout pipeline_layout;
+    VkDescriptorSet descriptor_set;
+    uint32_t workgroup_count_x;
+    uint32_t workgroup_count_y = 1;
+    uint32_t workgroup_count_z = 1;
+    const void* push_constants_data = nullptr;
+    uint32_t push_constants_size = 0;
+    uint32_t push_constants_offset = 0;
+};
+
+// Record compute dispatch commands into a command buffer
+inline void record_compute_dispatch(VkCommandBuffer cmd, const DispatchInfo& info) {
+    // Bind compute pipeline
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, info.pipeline);
+    
+    // Bind descriptor set
+    vkCmdBindDescriptorSets(
+        cmd,
+        VK_PIPELINE_BIND_POINT_COMPUTE,
+        info.pipeline_layout,
+        0,  // first set
+        1,  // descriptor set count
+        &info.descriptor_set,
+        0,  // dynamic offset count
+        nullptr
+    );
+    
+    // Push constants (if provided)
+    if (info.push_constants_data && info.push_constants_size > 0) {
+        vkCmdPushConstants(
+            cmd,
+            info.pipeline_layout,
+            VK_SHADER_STAGE_COMPUTE_BIT,
+            info.push_constants_offset,
+            info.push_constants_size,
+            info.push_constants_data
+        );
+    }
+    
+    // Dispatch compute work
+    vkCmdDispatch(cmd, info.workgroup_count_x, info.workgroup_count_y, info.workgroup_count_z);
+}
+
+// Calculate workgroup count for 1D data (e.g., buffer processing)
+inline uint32_t calculate_workgroup_count_1d(uint32_t element_count, uint32_t workgroup_size) {
+    return (element_count + workgroup_size - 1) / workgroup_size;
+}
+
+// Memory barrier helpers for synchronization
+struct MemoryBarrierInfo {
+    VkAccessFlags src_access_mask;
+    VkAccessFlags dst_access_mask;
+    VkBuffer buffer;
+    VkDeviceSize offset;
+    VkDeviceSize size;
+};
+
+// Insert buffer memory barrier
+inline void insert_buffer_barrier(VkCommandBuffer cmd,
+                                  VkPipelineStageFlags src_stage,
+                                  VkPipelineStageFlags dst_stage,
+                                  const MemoryBarrierInfo& info)
+{
+    VkBufferMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+    barrier.srcAccessMask = info.src_access_mask;
+    barrier.dstAccessMask = info.dst_access_mask;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.buffer = info.buffer;
+    barrier.offset = info.offset;
+    barrier.size = info.size;
+    
+    vkCmdPipelineBarrier(
+        cmd,
+        src_stage,
+        dst_stage,
+        0,  // dependency flags
+        0, nullptr,  // memory barriers
+        1, &barrier,  // buffer memory barriers
+        0, nullptr   // image memory barriers
+    );
+}
+
+// Barrier: Transfer Write → Compute Read (after staging buffer copy, before compute)
+inline void barrier_transfer_to_compute(VkCommandBuffer cmd, VkBuffer buffer, VkDeviceSize size) {
+    MemoryBarrierInfo info;
+    info.src_access_mask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    info.dst_access_mask = VK_ACCESS_SHADER_READ_BIT;
+    info.buffer = buffer;
+    info.offset = 0;
+    info.size = size;
+    
+    insert_buffer_barrier(
+        cmd,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        info
+    );
+}
+
+// Barrier: Compute Write → Transfer Read (after compute, before readback)
+inline void barrier_compute_to_transfer(VkCommandBuffer cmd, VkBuffer buffer, VkDeviceSize size) {
+    MemoryBarrierInfo info;
+    info.src_access_mask = VK_ACCESS_SHADER_WRITE_BIT;
+    info.dst_access_mask = VK_ACCESS_TRANSFER_READ_BIT;
+    info.buffer = buffer;
+    info.offset = 0;
+    info.size = size;
+    
+    insert_buffer_barrier(
+        cmd,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_TRANSFER_BIT,
+        info
+    );
+}
+
+// Barrier: Compute Write → Compute Read (between dependent compute passes)
+inline void barrier_compute_to_compute(VkCommandBuffer cmd, VkBuffer buffer, VkDeviceSize size) {
+    MemoryBarrierInfo info;
+    info.src_access_mask = VK_ACCESS_SHADER_WRITE_BIT;
+    info.dst_access_mask = VK_ACCESS_SHADER_READ_BIT;
+    info.buffer = buffer;
+    info.offset = 0;
+    info.size = size;
+    
+    insert_buffer_barrier(
+        cmd,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+        info
+    );
+}
+
+} // namespace compute_dispatch
 
 // Simple fixed-size thread pool to keep backend execution async.
 // This mirrors the CPU backend model but is local to the Vulkan backend

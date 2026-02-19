@@ -1,0 +1,34 @@
+# Shader for simple buffer copy operation
+# Demonstrates basic compute shader structure with descriptor bindings
+
+#version 450
+
+# Define workgroup size (how many threads run in parallel)
+# 256 is a good default (multiple of 32 for most GPUs)
+layout(local_size_x = 256) in;
+
+# Binding 0: Input buffer (read-only)
+# Storage buffers allow large data arrays
+layout(binding = 0) readonly buffer InputBuffer {
+    uint data[];
+} input_buf;
+
+# Binding 1: Output buffer (write-only)
+layout(binding = 1) writeonly buffer OutputBuffer {
+    uint data[];
+} output_buf;
+
+# Push constants: Small data passed directly (faster than buffers)
+layout(push_constant) uniform PushConstants {
+    uint element_count;  // Number of elements to copy
+} push;
+
+void main() {
+    // Get this thread's global index
+    uint idx = gl_GlobalInvocationID.x;
+    
+    // Bounds check: don't write beyond array
+    if (idx < push.element_count) {
+        output_buf.data[idx] = input_buf.data[idx];
+    }
+}
