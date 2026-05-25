@@ -15,6 +15,9 @@
   <img src="https://img.shields.io/badge/status-experimental-yellow" alt="Status"/>
 </p>
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/infinityabundance/ds-runtime)
+
+
 <p align="center">
 Experimental Linux-native DirectStorage-style runtime (CPU today, GPU tomorrow) with an early GPU/Vulkan backend, towards Wine/Proton integration. 
 
